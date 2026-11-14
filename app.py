@@ -52,6 +52,15 @@ else:
     if updated_text != active_tickers_text:
         st.session_state.watchlists[selected_wl] = updated_text
 
+    # Option to delete the currently selected watchlist
+    if st.sidebar.button(f"🗑️ Delete '{selected_wl}'"):
+        if len(st.session_state.watchlists) > 1:
+            del st.session_state.watchlists[selected_wl]
+            st.sidebar.success(f"Deleted '{selected_wl}' successfully!")
+            st.rerun()
+        else:
+            st.sidebar.warning("You must keep at least one watchlist.")
+
 st.sidebar.divider()
 auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True, help="Automatically adds .NS to Indian NSE tickers without suffixes.")
 timeframe_sl = st.sidebar.selectbox("Stop Loss Reference", ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"], index=0)
