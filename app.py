@@ -4,7 +4,59 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(page_title="Shaktimaan Hybrid Scanner", layout="wide")
-st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
+
+# ==========================================
+# 0. SECURITY & ACCESS CONTROL LAYER
+# ==========================================
+st.sidebar.header("🔐 Security & Access")
+
+# Set your access passwords here (or use Streamlit Secrets for production)
+APP_PASSWORD = "Shaktimaan2026"  # Password required to view the app
+ADMIN_PASSWORD = "AdminSecretPin"  # Password required to edit/add/delete watchlists
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+
+# Step 1: Main App Authentication Check
+if not st.session_state.authenticated:
+    st.title("🔒 Restricted Access: Shaktimaan Hybrid Scanner")
+    entered_pass = st.text_input("Enter App Access Password", type="password")
+    if st.button("Login"):
+        if entered_pass == APP_PASSWORD:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()  # Halt execution until authenticated
+
+# Logout button
+if st.sidebar.button("🔒 Lock / Logout"):
+    st.session_state.authenticated = False
+    st.session_state.is_admin = False
+    st.rerun()
+
+st.sidebar.divider()
+
+# Step 2: Admin Mode Check for Editing/Deleting Watchlists
+if not st.session_state.is_admin:
+    admin_input = st.sidebar.text_input("Admin Password (for Editing)", type="password")
+    if st.sidebar.button("Unlock Admin Mode"):
+        if admin_input == ADMIN_PASSWORD:
+            st.session_state.is_admin = True
+            st.success("Admin mode unlocked!")
+            st.rerun()
+        else:
+            st.sidebar.error("Incorrect admin password.")
+    st.sidebar.info("Viewer Mode: You can scan and view watchlists, but editing/deleting is locked.")
+else:
+    st.sidebar.success("👑 Admin Mode Active (Editing Enabled)")
+    if st.sidebar.button("Lock Admin Mode"):
+        st.session_state.is_admin = False
+        st.rerun()
+
+st.sidebar.divider()
 
 # ==========================================
 # 1. MULTIPLE WATCHLISTS & FILE UPLOADER
@@ -18,26 +70,29 @@ if "watchlists" not in st.session_state:
 
 st.sidebar.header("📁 Watchlist Manager")
 
-# File uploader in sidebar
-uploaded_file = st.sidebar.file_uploader("Upload Watchlist (CSV / TXT)", type=["csv", "txt"])
-if uploaded_file is not None:
-    try:
-        content = uploaded_file.read().decode("utf-8")
-        file_tokens = [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
-        if file_tokens:
-            wl_name = uploaded_file.name.split(".")[0].replace("_", " ").title()
-            st.session_state.watchlists[wl_name] = ", ".join(file_tokens)
-            st.sidebar.success(f"Imported '{wl_name}' successfully!")
-    except Exception as e:
-        st.sidebar.error(f"Error reading file: {e}")
+# File uploader (Only if Admin, or allowed for all — restricted to Admin here for security)
+if st.session_state.is_admin:
+    uploaded_file = st.sidebar.file_uploader("Upload Watchlist (CSV / TXT)", type=["csv", "txt"])
+    if uploaded_file is not None:
+        try:
+            content = uploaded_file.read().decode("utf-8")
+            file_tokens = [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
+            if file_tokens:
+                wl_name = uploaded_file.name.split(".")[0].replace("_", " ").title()
+                st.session_state.watchlists[wl_name] = ", ".join(file_tokens)
+                st.sidebar.success(f"Imported '{wl_name}' successfully!")
+        except Exception as e:
+            st.sidebar.error(f"Error reading file: {e}")
+    st.sidebar.divider()
 
-st.sidebar.divider()
+# Select active watchlist
+watchlist_names = list(st.session_state.watchlists.keys())
+if st.session_state.is_admin:
+    watchlist_names += ["+ Create New Watchlist"]
 
-# Select active watchlist or create a new one
-watchlist_names = list(st.session_state.watchlists.keys()) + ["+ Create New Watchlist"]
 selected_wl = st.sidebar.selectbox("Select Active Watchlist", watchlist_names)
 
-if selected_wl == "+ Create New Watchlist":
+if selected_wl == "+ Create New Watchlist" and st.session_state.is_admin:
     new_wl_name = st.sidebar.text_input("New Watchlist Name")
     new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", "TICKER1, TICKER2")
     if st.sidebar.button("Save New Watchlist"):
@@ -47,26 +102,27 @@ if selected_wl == "+ Create New Watchlist":
             st.rerun()
     active_tickers_text = "TICKER1, TICKER2"
 else:
-    active_tickers_text = st.session_state.watchlists[selected_wl]
-    updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", active_tickers_text, height=120)
-    if updated_text != active_tickers_text:
-        st.session_state.watchlists[selected_wl] = updated_text
+    active_tickers_text = st.session_state.watchlists.get(selected_wl, "RELIANCE, TCS")
+    if st.session_state.is_admin:
+        updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", active_tickers_text, height=120)
+        if updated_text != active_tickers_text:
+            st.session_state.watchlists[selected_wl] = updated_text
+            active_tickers_text = updated_text
 
-    # Option to delete the currently selected watchlist
-    if st.sidebar.button(f"🗑️ Delete '{selected_wl}'"):
-        if len(st.session_state.watchlists) > 1:
-            del st.session_state.watchlists[selected_wl]
-            st.sidebar.success(f"Deleted '{selected_wl}' successfully!")
-            st.rerun()
-        else:
-            st.sidebar.warning("You must keep at least one watchlist.")
+        if st.sidebar.button(f"🗑️ Delete '{selected_wl}'"):
+            if len(st.session_state.watchlists) > 1:
+                del st.session_state.watchlists[selected_wl]
+                st.sidebar.success(f"Deleted successfully!")
+                st.rerun()
+            else:
+                st.sidebar.warning("Must keep at least one watchlist.")
 
 st.sidebar.divider()
-auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True, help="Automatically adds .NS to Indian NSE tickers without suffixes.")
+auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True)
 timeframe_sl = st.sidebar.selectbox("Stop Loss Reference", ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"], index=0)
 vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
-# Parse tickers from active watchlist
+# Parse tickers
 parsed_tokens = [t.strip().upper() for t in active_tickers_text.replace("\n", ",").split(",") if t.strip()]
 tickers = []
 for t in parsed_tokens:
@@ -280,6 +336,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
 # ==========================================
 # 3. MAIN DASHBOARD VIEW
 # ==========================================
+st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
 st.subheader(f"Active Watchlist: `{selected_wl}`")
 st.write(f"Tokens to scan: `{', '.join(tickers)}`")
 
