@@ -9,30 +9,42 @@ st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss")
 # ==========================================
 # 1. WATCHLIST INPUT & SETTINGS
 # ==========================================
-col1, col2 = st.columns([2, 1])
+col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
     default_tickers = (
-        "RELIANCE.NS, TCS.NS, HDFCBANK.NS, INFY.NS, BHARTIARTL.NS, "
-        "ICICIBANK.NS, SBIN.NS, LT.NS, AAPL, MSFT, NVDA, AZN.L, SHEL.L"
+        "RELIANCE, TCS, HDFCBANK, INFY, BHARTIARTL, "
+        "ICICIBANK, SBIN, LT, AAPL, MSFT, AZN.L"
     )
     ticker_input = st.text_area(
-        "Paste Stock Tickers (comma or new-line separated — use .NS for NSE, .BO for BSE, .L for UK)",
+        "Paste Stock Tickers (comma or newline separated)",
         default_tickers,
         height=110,
     )
 
 with col2:
     uploaded_file = st.file_uploader("Or upload a CSV / TXT watchlist", type=["csv", "txt"])
+    auto_append_ns = st.checkbox("Auto-append .NS if no suffix", value=True, help="Automatically adds .NS to tickers that don't already have an exchange suffix like .NS, .BO, or .L")
+
+with col3:
     timeframe_sl = st.selectbox(
         "Active Chart / Stop Loss Reference",
         ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"],
         index=0,
     )
-    vol_surge_mult = st.number_input("Satellite Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+    vol_surge_mult = st.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
-# Parse and clean ticker list
+# Parse and clean ticker list with smart suffix handling
 raw_text = uploaded_file.read().decode("utf-8") if uploaded_file is not None else ticker_input
-tickers = list(dict.fromkeys([t.strip().upper() for t in raw_text.replace("\n", ",").split(",") if t.strip()]))
+parsed_tokens = [t.strip().upper() for t in raw_text.replace("\n", ",").split(",") if t.strip()]
+
+tickers = []
+for t in parsed_tokens:
+    if auto_append_ns and "." not in t:
+        tickers.append(f"{t}.NS")
+    else:
+        tickers.append(t)
+
+tickers = list(dict.fromkeys(tickers)) # Remove duplicates
 
 # ==========================================
 # 2. TECHNICAL ENGINE (PINE SCRIPT REPLICA)
@@ -208,7 +220,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                     bear_votes = 1 + (1 if vtrend_last == -1 else 0)
                     rec = f"SELL (XYZ-{bear_votes})"
 
-                # --- 6. STOP LOSS (20 EMA Monthly / 13 EMA Weekly or Daily) ---
+                # --- 6. STOP LOSS ---
                 if "Monthly" in sl_mode:
                     sl_val = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
                 elif "Weekly" in sl_mode:
@@ -248,7 +260,6 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
             df_out = fetch_and_analyze_batch(tuple(tickers), timeframe_sl, vol_surge_mult)
 
         if not df_out.empty:
-            # Filter controls
             f_col1, f_col2 = st.columns(2)
             with f_col1:
                 class_filter = st.multiselect(
@@ -267,7 +278,6 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
                     | (filtered_df["BB(50,2)"] != "-")
                 ]
 
-            # Exact color styling matching your TradingView dashboard
             def style_class(val):
                 palette = {
                     "CORE+SATELLITE": "background-color: #008755; color: white; font-weight: bold",
@@ -324,4 +334,4 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
                 mime="text/csv",
             )
         else:
-            st.error("No valid stock data found. Ensure Indian stocks end with .NS (e.g., TCS.NS) and UK stocks end with .L (e.g., AZN.L).")
+            st.error("No valid stock data found. Ensure Indian stocks end with .NS (or let Auto-append handle it) and UK stocks end with .L.")
