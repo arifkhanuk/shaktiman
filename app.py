@@ -4,47 +4,54 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(page_title="Shaktimaan Hybrid Scanner", layout="wide")
-st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss")
+st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
 
 # ==========================================
-# 1. WATCHLIST INPUT & SETTINGS
+# 1. MULTIPLE WATCHLISTS & SETTINGS STATE
 # ==========================================
-col1, col2, col3 = st.columns([2, 1, 1])
-with col1:
-    default_tickers = (
-        "RELIANCE, TCS, HDFCBANK, INFY, BHARTIARTL, "
-        "ICICIBANK, SBIN, LT, AAPL, MSFT, AZN.L"
-    )
-    ticker_input = st.text_area(
-        "Paste Stock Tickers (comma or newline separated)",
-        default_tickers,
-        height=110,
-    )
+if "watchlists" not in st.session_state:
+    st.session_state.watchlists = {
+        "Core Portfolio": "RELIANCE, TCS, HDFCBANK, INFY, BHARTIARTL",
+        "Breakout Watchlist": "ICICIBANK, SBIN, LT, COFORGE, ZYUSLIFE",
+        "US Tech & Global": "AAPL, MSFT, NVDA, AZN.L, SHEL.L"
+    }
 
-with col2:
-    uploaded_file = st.file_uploader("Or upload a CSV / TXT watchlist", type=["csv", "txt"])
-    auto_append_ns = st.checkbox("Auto-append .NS if no suffix", value=True, help="Automatically adds .NS to tickers that don't already have an exchange suffix like .NS, .BO, or .L")
+st.sidebar.header("📁 Watchlist Manager")
 
-with col3:
-    timeframe_sl = st.selectbox(
-        "Active Chart / Stop Loss Reference",
-        ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"],
-        index=0,
-    )
-    vol_surge_mult = st.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+# Select active watchlist or create a new one
+watchlist_names = list(st.session_state.watchlists.keys()) + ["+ Create New Watchlist"]
+selected_wl = st.sidebar.selectbox("Select Watchlist", watchlist_names)
 
-# Parse and clean ticker list with smart suffix handling
-raw_text = uploaded_file.read().decode("utf-8") if uploaded_file is not None else ticker_input
-parsed_tokens = [t.strip().upper() for t in raw_text.replace("\n", ",").split(",") if t.strip()]
+if selected_wl == "+ Create New Watchlist":
+    new_wl_name = st.sidebar.text_input("New Watchlist Name")
+    new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", "TICKER1, TICKER2")
+    if st.sidebar.button("Save New Watchlist"):
+        if new_wl_name.strip():
+            st.session_state.watchlists[new_wl_name.strip()] = new_wl_tickers
+            st.success(f"Watchlist '{new_wl_name}' saved!")
+            st.rerun()
+    active_tickers_text = "TICKER1, TICKER2"
+else:
+    # Allow editing the currently selected watchlist
+    active_tickers_text = st.session_state.watchlists[selected_wl]
+    updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", active_tickers_text, height=120)
+    if updated_text != active_tickers_text:
+        st.session_state.watchlists[selected_wl] = updated_text
 
+st.sidebar.divider()
+auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True, help="Automatically adds .NS to Indian NSE tickers without suffixes.")
+timeframe_sl = st.sidebar.selectbox("Stop Loss Reference", ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"], index=0)
+vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+
+# Parse tickers from the active watchlist
+parsed_tokens = [t.strip().upper() for t in active_tickers_text.replace("\n", ",").split(",") if t.strip()]
 tickers = []
 for t in parsed_tokens:
     if auto_append_ns and "." not in t:
         tickers.append(f"{t}.NS")
     else:
         tickers.append(t)
-
-tickers = list(dict.fromkeys(tickers)) # Remove duplicates
+tickers = list(dict.fromkeys(tickers))
 
 # ==========================================
 # 2. TECHNICAL ENGINE (PINE SCRIPT REPLICA)
@@ -100,9 +107,8 @@ def compute_vstop(close: pd.Series, high: pd.Series, low: pd.Series, length: int
 def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) -> pd.DataFrame:
     ticker_list = list(ticker_tuple)
     results = []
-
-    # Download in chunks of 40 to prevent Yahoo Finance rate limits
     chunk_size = 40
+
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
         raw_data = yf.download(
@@ -133,7 +139,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 if len(df_d) < 252:
                     continue
 
-                # Resample to Weekly (W-FRI) and Monthly (ME)
                 agg_rules = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
                 df_w = df_d.resample("W-FRI").agg(agg_rules).dropna()
                 df_m = df_d.resample("ME").agg(agg_rules).dropna()
@@ -143,7 +148,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
 
                 curr_close = float(df_d["Close"].iloc[-1])
 
-                # --- 1. CORE (Strictly Monthly "M") ---
+                # 1. Monthly Core
                 m_close = float(df_m["Close"].iloc[-1])
                 m_sma20 = float(df_m["Close"].rolling(20).mean().iloc[-1])
                 m_sma60 = float(df_m["Close"].rolling(60).mean().iloc[-1])
@@ -151,7 +156,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 m_roc12 = ((m_close - m_close12) / m_close12) * 100.0
                 tf_core = (m_close > m_sma60) and (m_sma20 > m_sma60) and (m_roc12 > 15.0)
 
-                # --- 2. SATELLITE (Strictly Weekly "W") ---
+                # 2. Weekly Satellite
                 w_close = float(df_w["Close"].iloc[-1])
                 w_vol = float(df_w["Volume"].iloc[-1])
                 w_vol_sma20 = float(df_w["Volume"].rolling(20).mean().iloc[-1])
@@ -174,7 +179,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 else:
                     classification = "Neither"
 
-                # --- 3. WEEKLY STAGE ENGINE ---
+                # 3. Weekly Stage
                 w_ema20_s = df_w["Close"].ewm(span=20, adjust=False).mean()
                 w_ema20 = float(w_ema20_s.iloc[-1])
                 w_ema20_past = float(w_ema20_s.iloc[-6])
@@ -185,7 +190,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 else:
                     stage = "Stage 3: Distribution" if w_slope >= -0.0005 else "Stage 4: Declining"
 
-                # --- 4. BREAKOUT TRIGGERS (DC / 52W / BB(50,2)) ---
+                # 4. Breakout Triggers
                 df_ref = df_w if "Weekly" in sl_mode else (df_m if "Monthly" in sl_mode else df_d)
                 target_bars = 52 if "Weekly" in sl_mode else (12 if "Monthly" in sl_mode else 252)
 
@@ -203,7 +208,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
-                # --- 5. ABC / XYZ REGIME & ACTION ---
+                # 5. Signal & Action
                 rsi_s = compute_rsi(df_ref["Close"], 14)
                 rsi_ma_s = rsi_s.rolling(14).mean()
                 curr_rsi = float(rsi_s.iloc[-1])
@@ -220,7 +225,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                     bear_votes = 1 + (1 if vtrend_last == -1 else 0)
                     rec = f"SELL (XYZ-{bear_votes})"
 
-                # --- 6. STOP LOSS ---
+                # 6. Stop Loss
                 if "Monthly" in sl_mode:
                     sl_val = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
                 elif "Weekly" in sl_mode:
@@ -250,13 +255,16 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
     return pd.DataFrame(results)
 
 # ==========================================
-# 3. EXECUTE & RENDER STYLED TABLE
+# 3. MAIN DASHBOARD VIEW
 # ==========================================
-if st.button("🚀 Run Multi-Stock Classification", type="primary"):
+st.subheader(f"Active Watchlist: `{selected_wl}`")
+st.write(f"Tokens to scan: `{', '.join(tickers)}`")
+
+if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
     if not tickers:
-        st.warning("Please enter or upload at least one stock ticker.")
+        st.warning("Selected watchlist is empty.")
     else:
-        with st.spinner(f"Scanning {len(tickers)} stocks across Monthly & Weekly timeframes..."):
+        with st.spinner(f"Scanning {len(tickers)} stocks for '{selected_wl}'..."):
             df_out = fetch_and_analyze_batch(tuple(tickers), timeframe_sl, vol_surge_mult)
 
         if not df_out.empty:
@@ -268,7 +276,7 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
                     default=["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"],
                 )
             with f_col2:
-                only_breakouts = st.checkbox("Show only stocks with active breakouts (DC / 52W / BB)", value=False)
+                only_breakouts = st.checkbox("Show only stocks with active breakouts", value=False)
 
             filtered_df = df_out[df_out["Classification"].isin(class_filter)].copy()
             if only_breakouts:
@@ -288,14 +296,10 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
                 return palette.get(val, "")
 
             def style_stage(val):
-                if "Stage 2" in val:
-                    return "background-color: #00aa50; color: white; font-weight: bold"
-                if "Stage 1" in val:
-                    return "background-color: #808080; color: white"
-                if "Stage 3" in val:
-                    return "background-color: #dcb400; color: black; font-weight: bold"
-                if "Stage 4" in val:
-                    return "background-color: #dc5064; color: white"
+                if "Stage 2" in val: return "background-color: #00aa50; color: white; font-weight: bold"
+                if "Stage 1" in val: return "background-color: #808080; color: white"
+                if "Stage 3" in val: return "background-color: #dcb400; color: black; font-weight: bold"
+                if "Stage 4" in val: return "background-color: #dc5064; color: white"
                 return ""
 
             def style_dc(val):
@@ -308,10 +312,8 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
                 return "background-color: #196e2d; color: #d782ff; font-weight: bold" if val == "BB(50,2)" else "color: #666666"
 
             def style_signal(val):
-                if "BUY" in val:
-                    return "background-color: #228b22; color: white; font-weight: bold"
-                if "SELL" in val:
-                    return "background-color: #dc143c; color: white; font-weight: bold"
+                if "BUY" in val: return "background-color: #228b22; color: white; font-weight: bold"
+                if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
                 return "background-color: #1e90ff; color: white; font-weight: bold"
 
             styled = (
@@ -328,10 +330,10 @@ if st.button("🚀 Run Multi-Stock Classification", type="primary"):
 
             csv_bytes = filtered_df.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="📥 Export Results to CSV",
+                label=f"📥 Export '{selected_wl}' Results to CSV",
                 data=csv_bytes,
-                file_name="shaktimaan_classification_output.csv",
+                file_name=f"{selected_wl.lower().replace(' ', '_')}_scan.csv",
                 mime="text/csv",
             )
         else:
-            st.error("No valid stock data found. Ensure Indian stocks end with .NS (or let Auto-append handle it) and UK stocks end with .L.")
+            st.error("No valid stock data returned.")
