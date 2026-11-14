@@ -7,7 +7,7 @@ st.set_page_config(page_title="Shaktimaan Hybrid Scanner", layout="wide")
 st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
 
 # ==========================================
-# 1. MULTIPLE WATCHLISTS & SETTINGS STATE
+# 1. MULTIPLE WATCHLISTS & FILE UPLOADER
 # ==========================================
 if "watchlists" not in st.session_state:
     st.session_state.watchlists = {
@@ -18,9 +18,24 @@ if "watchlists" not in st.session_state:
 
 st.sidebar.header("📁 Watchlist Manager")
 
+# File uploader in sidebar
+uploaded_file = st.sidebar.file_uploader("Upload Watchlist (CSV / TXT)", type=["csv", "txt"])
+if uploaded_file is not None:
+    try:
+        content = uploaded_file.read().decode("utf-8")
+        file_tokens = [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
+        if file_tokens:
+            wl_name = uploaded_file.name.split(".")[0].replace("_", " ").title()
+            st.session_state.watchlists[wl_name] = ", ".join(file_tokens)
+            st.sidebar.success(f"Imported '{wl_name}' successfully!")
+    except Exception as e:
+        st.sidebar.error(f"Error reading file: {e}")
+
+st.sidebar.divider()
+
 # Select active watchlist or create a new one
 watchlist_names = list(st.session_state.watchlists.keys()) + ["+ Create New Watchlist"]
-selected_wl = st.sidebar.selectbox("Select Watchlist", watchlist_names)
+selected_wl = st.sidebar.selectbox("Select Active Watchlist", watchlist_names)
 
 if selected_wl == "+ Create New Watchlist":
     new_wl_name = st.sidebar.text_input("New Watchlist Name")
@@ -32,7 +47,6 @@ if selected_wl == "+ Create New Watchlist":
             st.rerun()
     active_tickers_text = "TICKER1, TICKER2"
 else:
-    # Allow editing the currently selected watchlist
     active_tickers_text = st.session_state.watchlists[selected_wl]
     updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", active_tickers_text, height=120)
     if updated_text != active_tickers_text:
@@ -43,7 +57,7 @@ auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True,
 timeframe_sl = st.sidebar.selectbox("Stop Loss Reference", ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"], index=0)
 vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
-# Parse tickers from the active watchlist
+# Parse tickers from active watchlist
 parsed_tokens = [t.strip().upper() for t in active_tickers_text.replace("\n", ",").split(",") if t.strip()]
 tickers = []
 for t in parsed_tokens:
