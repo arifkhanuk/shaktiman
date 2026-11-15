@@ -17,7 +17,7 @@ if "watchlists" not in st.session_state:
     st.session_state.watchlists = {
         "Core Portfolio": "RELIANCE, TCS, HDFCBANK, INFY, BHARTIARTL",
         "Breakout Watchlist": "ICICIBANK, SBIN, LT, COFORGE, ZYUSLIFE",
-        "US Tech & Global": "AAPL, MSFT, NVDA, AZN.L, SHEL.L"
+        "US Tech & Global": "AAPL, MSFT, NVDA, AZN, SHEL"
     }
 
 st.sidebar.header("📁 Watchlist Manager")
@@ -287,8 +287,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 sl_core = max(m_ema20, max_allowable_core_sl)
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
-                # TradingView absolute URL for column config link
-                tv_symbol = t.replace(".", "%2E")
+                # TradingView absolute URL with suffix stripped (e.g. RELIANCE.NS -> RELIANCE)
+                tv_symbol = t.split(".")[0]
                 tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={tv_symbol}"
 
                 results.append(
