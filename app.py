@@ -32,7 +32,7 @@ if not st.session_state.authenticated_admin:
             st.rerun()
         else:
             st.sidebar.error("Incorrect password.")
-    st.sidebar.info("Public Mode: You can view existing watchlists and scan freely.")
+    st.sidebar.info("Public Mode: View existing watchlists & upload session files.")
 else:
     st.sidebar.success("👑 Admin Mode Active")
     if st.sidebar.button("Lock Admin Mode"):
@@ -78,7 +78,7 @@ if selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_ad
     active_tickers_text = "TICKER1, TICKER2"
 elif session_custom_watchlist and selected_wl == session_custom_watchlist[0]:
     active_tickers_text = session_custom_watchlist[1]
-    st.sidebar.caption("⚠️ This uploaded watchlist is temporary for this session.")
+    st.sidebar.caption("⚠️ Temporary session watchlist.")
 else:
     active_tickers_text = st.session_state.watchlists.get(selected_wl, "RELIANCE, TCS")
     if st.session_state.authenticated_admin:
@@ -246,7 +246,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     stage = "Stage 3: Distribution" if w_slope >= -0.0005 else "Stage 4: Declining"
 
-                # 4. Breakout Triggers (Daily/Weekly reference)
+                # 4. Breakout Triggers
                 ref_high = float(df_d["High"].iloc[-1])
                 ref_close = float(df_d["Close"].iloc[-1])
                 is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max())
@@ -278,25 +278,23 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     rec = f"SELL (XYZ-{bear_votes})"
 
                 # 6. Dual Stop Losses & Buffers
-                # Satellite SL = Weekly EMA(13)
                 sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1])
                 sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
 
-                # Core SL = Monthly EMA(20), capped so it never drops more than 20% below Monthly Open
                 m_open = float(df_m["Open"].iloc[-1])
                 m_ema20 = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
                 max_allowable_core_sl = m_open * 0.80
                 sl_core = max(m_ema20, max_allowable_core_sl)
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
-                # TradingView Hyperlink format requested
-                tv_symbol = t.replace(".", "%2E") # e.g. NSE:COFORGE
+                # TradingView absolute URL for column config link
+                tv_symbol = t.replace(".", "%2E")
                 tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={tv_symbol}"
 
                 results.append(
                     {
                         "Ticker": t,
-                        "TV_Link": tv_link,
+                        "Chart": tv_link,
                         "Last Price": round(curr_close, 2),
                         "Classification": classification,
                         "Weekly Stage": stage,
@@ -330,23 +328,28 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
             df_out = fetch_and_analyze_batch(tuple(tickers), vol_surge_mult)
 
         if not df_out.empty:
-            # --- CORRECTED & IMPROVED FILTERING CONTROLS ---
-            f_col1, f_col2, f_col3 = st.columns(3)
+            # --- ROBUST FILTERING CONTROLS ---
+            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
             with f_col1:
                 class_options = ["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"]
-                selected_classes = st.multiselect("Filter by Classification", options=class_options, default=class_options)
+                selected_classes = st.multiselect("Filter Classification", options=class_options, default=class_options)
             with f_col2:
                 stage_options = ["Stage 1: Basing", "Stage 2: Advancing", "Stage 3: Distribution", "Stage 4: Declining"]
-                selected_stages = st.multiselect("Filter by Weekly Stage", options=stage_options, default=stage_options)
+                selected_stages = st.multiselect("Filter Weekly Stage", options=stage_options, default=stage_options)
             with f_col3:
-                only_breakouts = st.checkbox("Show only stocks with active breakouts", value=False)
+                search_query = st.text_input("🔍 Search Ticker", "").strip().upper()
+            with f_col4:
+                st.write("") # Spacer alignment
+                only_breakouts = st.checkbox("Active breakouts only", value=False)
 
-            # Apply filters correctly
-            filtered_df = df_out[
-                df_out["Classification"].isin(selected_classes) & 
-                df_out["Weekly Stage"].isin(selected_stages)
-            ].copy()
-
+            # Apply filters safely
+            filtered_df = df_out.copy()
+            if selected_classes:
+                filtered_df = filtered_df[filtered_df["Classification"].isin(selected_classes)]
+            if selected_stages:
+                filtered_df = filtered_df[filtered_df["Weekly Stage"].isin(selected_stages)]
+            if search_query:
+                filtered_df = filtered_df[filtered_df["Ticker"].str.contains(search_query)]
             if only_breakouts:
                 filtered_df = filtered_df[
                     (filtered_df["DC (20)"] != "-")
@@ -354,75 +357,76 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
                     | (filtered_df["BB(50,2)"] != "-")
                 ]
 
-            # Styling functions
-            def style_class(val):
-                palette = {
-                    "CORE+SATELLITE": "background-color: #008755; color: white; font-weight: bold",
-                    "CORE": "background-color: #147341; color: white; font-weight: bold",
-                    "SATELLITE": "background-color: #235aa0; color: white; font-weight: bold",
-                    "Neither": "background-color: #323232; color: #bbbbbb",
-                }
-                return palette.get(val, "")
+            if filtered_df.empty:
+                st.warning("No stocks match the selected filter criteria. Try expanding your filter options.")
+            else:
+                # Styling functions
+                def style_class(val):
+                    palette = {
+                        "CORE+SATELLITE": "background-color: #008755; color: white; font-weight: bold",
+                        "CORE": "background-color: #147341; color: white; font-weight: bold",
+                        "SATELLITE": "background-color: #235aa0; color: white; font-weight: bold",
+                        "Neither": "background-color: #323232; color: #bbbbbb",
+                    }
+                    return palette.get(val, "")
 
-            def style_stage(val):
-                if "Stage 2" in val: return "background-color: #00aa50; color: white; font-weight: bold"
-                if "Stage 1" in val: return "background-color: #808080; color: white"
-                if "Stage 3" in val: return "background-color: #dcb400; color: black; font-weight: bold"
-                if "Stage 4" in val: return "background-color: #dc5064; color: white"
-                return ""
+                def style_stage(val):
+                    if "Stage 2" in val: return "background-color: #00aa50; color: white; font-weight: bold"
+                    if "Stage 1" in val: return "background-color: #808080; color: white"
+                    if "Stage 3" in val: return "background-color: #dcb400; color: black; font-weight: bold"
+                    if "Stage 4" in val: return "background-color: #dc5064; color: white"
+                    return ""
 
-            def style_dc(val):
-                return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if val == "DC" else "color: #666666"
+                def style_dc(val):
+                    return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if val == "DC" else "color: #666666"
 
-            def style_52w(val):
-                return "background-color: #196e2d; color: #64b4ff; font-weight: bold" if val == "52W" else "color: #666666"
+                def style_52w(val):
+                    return "background-color: #196e2d; color: #64b4ff; font-weight: bold" if val == "52W" else "color: #666666"
 
-            def style_bb(val):
-                return "background-color: #196e2d; color: #d782ff; font-weight: bold" if val == "BB(50,2)" else "color: #666666"
+                def style_bb(val):
+                    return "background-color: #196e2d; color: #d782ff; font-weight: bold" if val == "BB(50,2)" else "color: #666666"
 
-            def style_signal(val):
-                if "BUY" in val: return "background-color: #228b22; color: white; font-weight: bold"
-                if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
-                return "background-color: #1e90ff; color: white; font-weight: bold"
+                def style_signal(val):
+                    if "BUY" in val: return "background-color: #228b22; color: white; font-weight: bold"
+                    if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
+                    return "background-color: #1e90ff; color: white; font-weight: bold"
 
-            styled = (
-                filtered_df.drop(columns=["TV_Link"]).style.map(style_class, subset=["Classification"])
-                .map(style_stage, subset=["Weekly Stage"])
-                .map(style_dc, subset=["DC (20)"])
-                .map(style_52w, subset=["52W High"])
-                .map(style_bb, subset=["BB(50,2)"])
-                .map(style_signal, subset=["Signal"])
-                .format({
-                    "Last Price": "{:.2f}", 
-                    "SL Satellite": "{:.2f}", 
-                    "SL Sat Buffer %": "{:.2f}%",
-                    "SL Core": "{:.2f}",
-                    "SL Core Buffer %": "{:.2f}%"
-                })
-            )
+                styled = (
+                    filtered_df.style.map(style_class, subset=["Classification"])
+                    .map(style_stage, subset=["Weekly Stage"])
+                    .map(style_dc, subset=["DC (20)"])
+                    .map(style_52w, subset=["52W High"])
+                    .map(style_bb, subset=["BB(50,2)"])
+                    .map(style_signal, subset=["Signal"])
+                    .format({
+                        "Last Price": "{:.2f}", 
+                        "SL Satellite": "{:.2f}", 
+                        "SL Sat Buffer %": "{:.2f}%",
+                        "SL Core": "{:.2f}",
+                        "SL Core Buffer %": "{:.2f}%"
+                    })
+                )
 
-            # Render table with column filter/search enabled via st.dataframe configuration
-            st.dataframe(
-                styled, 
-                use_container_width=True, 
-                height=550,
-                column_config={
-                    "Ticker": st.column_config.LinkColumn(
-                        "Ticker (TradingView)",
-                        help="Click to open stock chart directly on TradingView",
-                        max_chars=100,
-                        display_text=r"^(.*)$",
-                        pinned=True
-                    )
-                }
-            )
+                st.dataframe(
+                    styled, 
+                    use_container_width=True, 
+                    height=550,
+                    column_config={
+                        "Chart": st.column_config.LinkColumn(
+                            "TradingView Chart",
+                            help="Click to open stock chart directly on TradingView",
+                            display_text="📈 Open Chart",
+                            pinned=True
+                        )
+                    }
+                )
 
-            csv_bytes = filtered_df.drop(columns=["TV_Link"]).to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label=f"📥 Export '{selected_wl}' Results to CSV",
-                data=csv_bytes,
-                file_name=f"{selected_wl.lower().replace(' ', '_')}_scan.csv",
-                mime="text/csv",
-            )
+                csv_bytes = filtered_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label=f"📥 Export '{selected_wl}' Results to CSV",
+                    data=csv_bytes,
+                    file_name=f"{selected_wl.lower().replace(' ', '_')}_scan.csv",
+                    mime="text/csv",
+                )
         else:
             st.error("No valid stock data returned.")
