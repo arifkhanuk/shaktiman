@@ -6,61 +6,13 @@ import numpy as np
 st.set_page_config(page_title="Shaktimaan Hybrid Scanner", layout="wide")
 
 # ==========================================
-# 0. SECURITY & ACCESS CONTROL LAYER
+# 0. ACCESS CONTROL & WATCHLIST SETUP
 # ==========================================
-st.sidebar.header("🔐 Security & Access")
-
-# Set your access passwords here (or use Streamlit Secrets for production)
-APP_PASSWORD = "Shaktimaan2026"  # Password required to view the app
 ADMIN_PASSWORD = "AdminSecretPin"  # Password required to edit/add/delete watchlists
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False
+if "authenticated_admin" not in st.session_state:
+    st.session_state.authenticated_admin = False
 
-# Step 1: Main App Authentication Check
-if not st.session_state.authenticated:
-    st.title("🔒 Restricted Access: Shaktimaan Hybrid Scanner")
-    entered_pass = st.text_input("Enter App Access Password", type="password")
-    if st.button("Login"):
-        if entered_pass == APP_PASSWORD:
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    st.stop()  # Halt execution until authenticated
-
-# Logout button
-if st.sidebar.button("🔒 Lock / Logout"):
-    st.session_state.authenticated = False
-    st.session_state.is_admin = False
-    st.rerun()
-
-st.sidebar.divider()
-
-# Step 2: Admin Mode Check for Editing/Deleting Watchlists
-if not st.session_state.is_admin:
-    admin_input = st.sidebar.text_input("Admin Password (for Editing)", type="password")
-    if st.sidebar.button("Unlock Admin Mode"):
-        if admin_input == ADMIN_PASSWORD:
-            st.session_state.is_admin = True
-            st.success("Admin mode unlocked!")
-            st.rerun()
-        else:
-            st.sidebar.error("Incorrect admin password.")
-    st.sidebar.info("Viewer Mode: You can scan and view watchlists, but editing/deleting is locked.")
-else:
-    st.sidebar.success("👑 Admin Mode Active (Editing Enabled)")
-    if st.sidebar.button("Lock Admin Mode"):
-        st.session_state.is_admin = False
-        st.rerun()
-
-st.sidebar.divider()
-
-# ==========================================
-# 1. MULTIPLE WATCHLISTS & FILE UPLOADER
-# ==========================================
 if "watchlists" not in st.session_state:
     st.session_state.watchlists = {
         "Core Portfolio": "RELIANCE, TCS, HDFCBANK, INFY, BHARTIARTL",
@@ -70,29 +22,52 @@ if "watchlists" not in st.session_state:
 
 st.sidebar.header("📁 Watchlist Manager")
 
-# File uploader (Only if Admin, or allowed for all — restricted to Admin here for security)
-if st.session_state.is_admin:
-    uploaded_file = st.sidebar.file_uploader("Upload Watchlist (CSV / TXT)", type=["csv", "txt"])
-    if uploaded_file is not None:
-        try:
-            content = uploaded_file.read().decode("utf-8")
-            file_tokens = [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
-            if file_tokens:
-                wl_name = uploaded_file.name.split(".")[0].replace("_", " ").title()
+# Admin Control Panel in Sidebar
+if not st.session_state.authenticated_admin:
+    admin_pass_input = st.sidebar.text_input("Admin Password (to edit/delete)", type="password")
+    if st.sidebar.button("Unlock Admin Mode"):
+        if admin_pass_input == ADMIN_PASSWORD:
+            st.session_state.authenticated_admin = True
+            st.success("Admin mode unlocked!")
+            st.rerun()
+        else:
+            st.sidebar.error("Incorrect password.")
+    st.sidebar.info("Public Mode: You can view existing watchlists and scan freely.")
+else:
+    st.sidebar.success("👑 Admin Mode Active")
+    if st.sidebar.button("Lock Admin Mode"):
+        st.session_state.authenticated_admin = False
+        st.rerun()
+
+st.sidebar.divider()
+
+# Public file uploader (Session-only storage for public users, persistent if admin)
+uploaded_file = st.sidebar.file_uploader("Upload Temporary Watchlist (CSV / TXT)", type=["csv", "txt"])
+session_custom_watchlist = None
+if uploaded_file is not None:
+    try:
+        content = uploaded_file.read().decode("utf-8")
+        file_tokens = [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
+        if file_tokens:
+            wl_name = "Uploaded: " + uploaded_file.name.split(".")[0].replace("_", " ").title()
+            if st.session_state.authenticated_admin:
                 st.session_state.watchlists[wl_name] = ", ".join(file_tokens)
-                st.sidebar.success(f"Imported '{wl_name}' successfully!")
-        except Exception as e:
+            session_custom_watchlist = (wl_name, ", ".join(file_tokens))
+            st.sidebar.success(f"Loaded '{wl_name}'!")
+    except Exception as e:
             st.sidebar.error(f"Error reading file: {e}")
-    st.sidebar.divider()
 
-# Select active watchlist
-watchlist_names = list(st.session_state.watchlists.keys())
-if st.session_state.is_admin:
-    watchlist_names += ["+ Create New Watchlist"]
+# Build selection list
+available_mls = list(st.session_state.watchlists.keys())
+if session_custom_watchlist and session_custom_watchlist[0] not in available_mls:
+    available_mls.insert(0, session_custom_watchlist[0])
+if st.session_state.authenticated_admin:
+    available_mls.append("+ Create New Watchlist")
 
-selected_wl = st.sidebar.selectbox("Select Active Watchlist", watchlist_names)
+selected_wl = st.sidebar.selectbox("Select Active Watchlist", available_mls)
 
-if selected_wl == "+ Create New Watchlist" and st.session_state.is_admin:
+# Handle Watchlist Content
+if selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
     new_wl_name = st.sidebar.text_input("New Watchlist Name")
     new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", "TICKER1, TICKER2")
     if st.sidebar.button("Save New Watchlist"):
@@ -101,9 +76,12 @@ if selected_wl == "+ Create New Watchlist" and st.session_state.is_admin:
             st.success(f"Watchlist '{new_wl_name}' saved!")
             st.rerun()
     active_tickers_text = "TICKER1, TICKER2"
+elif session_custom_watchlist and selected_wl == session_custom_watchlist[0]:
+    active_tickers_text = session_custom_watchlist[1]
+    st.sidebar.caption("⚠️ This uploaded watchlist is temporary for this session.")
 else:
     active_tickers_text = st.session_state.watchlists.get(selected_wl, "RELIANCE, TCS")
-    if st.session_state.is_admin:
+    if st.session_state.authenticated_admin:
         updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", active_tickers_text, height=120)
         if updated_text != active_tickers_text:
             st.session_state.watchlists[selected_wl] = updated_text
@@ -112,14 +90,13 @@ else:
         if st.sidebar.button(f"🗑️ Delete '{selected_wl}'"):
             if len(st.session_state.watchlists) > 1:
                 del st.session_state.watchlists[selected_wl]
-                st.sidebar.success(f"Deleted successfully!")
+                st.sidebar.success("Deleted successfully!")
                 st.rerun()
             else:
-                st.sidebar.warning("Must keep at least one watchlist.")
+                st.sidebar.warning("Must keep at least one permanent watchlist.")
 
 st.sidebar.divider()
 auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True)
-timeframe_sl = st.sidebar.selectbox("Stop Loss Reference", ["Weekly (13 EMA)", "Monthly (20 EMA)", "Daily (13 EMA)"], index=0)
 vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
 # Parse tickers
@@ -133,7 +110,7 @@ for t in parsed_tokens:
 tickers = list(dict.fromkeys(tickers))
 
 # ==========================================
-# 2. TECHNICAL ENGINE (PINE SCRIPT REPLICA)
+# 1. TECHNICAL ENGINE (PINE SCRIPT REPLICA)
 # ==========================================
 def compute_rsi(series: pd.Series, length: int = 14) -> pd.Series:
     delta = series.diff()
@@ -183,7 +160,7 @@ def compute_vstop(close: pd.Series, high: pd.Series, low: pd.Series, length: int
     return vstop[-1], vtrend[-1]
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) -> pd.DataFrame:
+def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFrame:
     ticker_list = list(ticker_tuple)
     results = []
     chunk_size = 40
@@ -269,18 +246,14 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 else:
                     stage = "Stage 3: Distribution" if w_slope >= -0.0005 else "Stage 4: Declining"
 
-                # 4. Breakout Triggers
-                df_ref = df_w if "Weekly" in sl_mode else (df_m if "Monthly" in sl_mode else df_d)
-                target_bars = 52 if "Weekly" in sl_mode else (12 if "Monthly" in sl_mode else 252)
+                # 4. Breakout Triggers (Daily/Weekly reference)
+                ref_high = float(df_d["High"].iloc[-1])
+                ref_close = float(df_d["Close"].iloc[-1])
+                is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max())
+                is_dc = ref_high > float(df_d["High"].iloc[-21:-1].max())
 
-                ref_high = float(df_ref["High"].iloc[-1])
-                ref_close = float(df_ref["Close"].iloc[-1])
-
-                is_52w = ref_high >= float(df_ref["High"].iloc[-(target_bars + 1) : -1].max())
-                is_dc = ref_high > float(df_ref["High"].iloc[-21:-1].max())
-
-                bb_basis = df_ref["Close"].rolling(50).mean().iloc[-1]
-                bb_std = df_ref["Close"].rolling(50).std().iloc[-1]
+                bb_basis = df_d["Close"].rolling(50).mean().iloc[-1]
+                bb_std = df_d["Close"].rolling(50).std().iloc[-1]
                 is_bb = ref_close > (bb_basis + 2.0 * bb_std)
 
                 dc_col = "DC" if is_dc else "-"
@@ -288,11 +261,11 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                 bb_col = "BB(50,2)" if is_bb else "-"
 
                 # 5. Signal & Action
-                rsi_s = compute_rsi(df_ref["Close"], 14)
+                rsi_s = compute_rsi(df_d["Close"], 14)
                 rsi_ma_s = rsi_s.rolling(14).mean()
                 curr_rsi = float(rsi_s.iloc[-1])
                 curr_rsi_ma = float(rsi_ma_s.iloc[-1])
-                _, vtrend_last = compute_vstop(df_ref["Close"], df_ref["High"], df_ref["Low"])
+                _, vtrend_last = compute_vstop(df_d["Close"], df_d["High"], df_d["Low"])
 
                 if curr_rsi >= 55:
                     if curr_rsi >= curr_rsi_ma:
@@ -304,19 +277,26 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                     bear_votes = 1 + (1 if vtrend_last == -1 else 0)
                     rec = f"SELL (XYZ-{bear_votes})"
 
-                # 6. Stop Loss
-                if "Monthly" in sl_mode:
-                    sl_val = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-                elif "Weekly" in sl_mode:
-                    sl_val = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1])
-                else:
-                    sl_val = float(df_d["Close"].ewm(span=13, adjust=False).mean().iloc[-1])
+                # 6. Dual Stop Losses & Buffers
+                # Satellite SL = Weekly EMA(13)
+                sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1])
+                sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
 
-                sl_buffer_pct = ((curr_close - sl_val) / curr_close) * 100.0
+                # Core SL = Monthly EMA(20), capped so it never drops more than 20% below Monthly Open
+                m_open = float(df_m["Open"].iloc[-1])
+                m_ema20 = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
+                max_allowable_core_sl = m_open * 0.80
+                sl_core = max(m_ema20, max_allowable_core_sl)
+                sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
+
+                # TradingView Hyperlink format requested
+                tv_symbol = t.replace(".", "%2E") # e.g. NSE:COFORGE
+                tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={tv_symbol}"
 
                 results.append(
                     {
                         "Ticker": t,
+                        "TV_Link": tv_link,
                         "Last Price": round(curr_close, 2),
                         "Classification": classification,
                         "Weekly Stage": stage,
@@ -324,8 +304,10 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
                         "52W High": w52_col,
                         "BB(50,2)": bb_col,
                         "Signal": rec,
-                        "Stop Loss": round(sl_val, 2),
-                        "SL Buffer %": round(sl_buffer_pct, 2),
+                        "SL Satellite": round(sl_sat, 2),
+                        "SL Sat Buffer %": round(sl_sat_buffer, 2),
+                        "SL Core": round(sl_core, 2),
+                        "SL Core Buffer %": round(sl_core_buffer, 2),
                     }
                 )
             except Exception:
@@ -334,7 +316,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, sl_mode: str, vol_mult: float) 
     return pd.DataFrame(results)
 
 # ==========================================
-# 3. MAIN DASHBOARD VIEW
+# 2. MAIN DASHBOARD VIEW
 # ==========================================
 st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
 st.subheader(f"Active Watchlist: `{selected_wl}`")
@@ -345,20 +327,26 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
         st.warning("Selected watchlist is empty.")
     else:
         with st.spinner(f"Scanning {len(tickers)} stocks for '{selected_wl}'..."):
-            df_out = fetch_and_analyze_batch(tuple(tickers), timeframe_sl, vol_surge_mult)
+            df_out = fetch_and_analyze_batch(tuple(tickers), vol_surge_mult)
 
         if not df_out.empty:
-            f_col1, f_col2 = st.columns(2)
+            # --- CORRECTED & IMPROVED FILTERING CONTROLS ---
+            f_col1, f_col2, f_col3 = st.columns(3)
             with f_col1:
-                class_filter = st.multiselect(
-                    "Filter by Classification",
-                    options=["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"],
-                    default=["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"],
-                )
+                class_options = ["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"]
+                selected_classes = st.multiselect("Filter by Classification", options=class_options, default=class_options)
             with f_col2:
+                stage_options = ["Stage 1: Basing", "Stage 2: Advancing", "Stage 3: Distribution", "Stage 4: Declining"]
+                selected_stages = st.multiselect("Filter by Weekly Stage", options=stage_options, default=stage_options)
+            with f_col3:
                 only_breakouts = st.checkbox("Show only stocks with active breakouts", value=False)
 
-            filtered_df = df_out[df_out["Classification"].isin(class_filter)].copy()
+            # Apply filters correctly
+            filtered_df = df_out[
+                df_out["Classification"].isin(selected_classes) & 
+                df_out["Weekly Stage"].isin(selected_stages)
+            ].copy()
+
             if only_breakouts:
                 filtered_df = filtered_df[
                     (filtered_df["DC (20)"] != "-")
@@ -366,6 +354,7 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
                     | (filtered_df["BB(50,2)"] != "-")
                 ]
 
+            # Styling functions
             def style_class(val):
                 palette = {
                     "CORE+SATELLITE": "background-color: #008755; color: white; font-weight: bold",
@@ -397,18 +386,38 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
                 return "background-color: #1e90ff; color: white; font-weight: bold"
 
             styled = (
-                filtered_df.style.map(style_class, subset=["Classification"])
+                filtered_df.drop(columns=["TV_Link"]).style.map(style_class, subset=["Classification"])
                 .map(style_stage, subset=["Weekly Stage"])
                 .map(style_dc, subset=["DC (20)"])
                 .map(style_52w, subset=["52W High"])
                 .map(style_bb, subset=["BB(50,2)"])
                 .map(style_signal, subset=["Signal"])
-                .format({"Last Price": "{:.2f}", "Stop Loss": "{:.2f}", "SL Buffer %": "{:.2f}%"})
+                .format({
+                    "Last Price": "{:.2f}", 
+                    "SL Satellite": "{:.2f}", 
+                    "SL Sat Buffer %": "{:.2f}%",
+                    "SL Core": "{:.2f}",
+                    "SL Core Buffer %": "{:.2f}%"
+                })
             )
 
-            st.dataframe(styled, use_container_width=True, height=550)
+            # Render table with column filter/search enabled via st.dataframe configuration
+            st.dataframe(
+                styled, 
+                use_container_width=True, 
+                height=550,
+                column_config={
+                    "Ticker": st.column_config.LinkColumn(
+                        "Ticker (TradingView)",
+                        help="Click to open stock chart directly on TradingView",
+                        max_chars=100,
+                        display_text=r"^(.*)$",
+                        pinned=True
+                    )
+                }
+            )
 
-            csv_bytes = filtered_df.to_csv(index=False).encode("utf-8")
+            csv_bytes = filtered_df.drop(columns=["TV_Link"]).to_csv(index=False).encode("utf-8")
             st.download_button(
                 label=f"📥 Export '{selected_wl}' Results to CSV",
                 data=csv_bytes,
