@@ -234,7 +234,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     df_d = raw_data[t].dropna(how="all").copy()
 
                 df_d = df_d.dropna(subset=["Close", "High", "Low", "Volume"])
-                if len(df_d) < 252:
+                if len(df_d) < 50:
                     results.append({
                         "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                         "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
@@ -248,17 +248,41 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 df_w = df_d.resample("W-FRI").agg(agg_rules).dropna()
                 df_m = df_d.resample("ME").agg(agg_rules).dropna()
 
-                if len(df_m) < 61 or len(df_w) < 53:
+                curr_close = float(df_d["Close"].iloc[-1])
+                clean_ticker = t.split(".")[0]
+                exchange_prefix = "LMS" if t.endswith(".L") else ("BSE" if t.endswith(".BO") else "NSE")
+                tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={exchange_prefix}%3A{clean_ticker}"
+
+                # Compute Stop Losses even if history is partially short
+                sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1]) if len(df_w) >= 13 else curr_close * 0.95
+                sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
+
+                m_open = float(df_m["Open"].iloc[-1]) if not df_m.empty else curr_close
+                m_ema20 = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1]) if len(df_m) >= 20 else curr_close * 0.95
+                max_allowable_core_sl = m_open * 0.80
+                sl_core = max(m_ema20, max_allowable_core_sl)
+                sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
+
+                # Check if enough history exists for advanced classifications/signals
+                if len(df_m) < 61 or len(df_w) < 53 or len(df_d) < 252:
                     results.append({
-                        "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": float(df_d["Close"].iloc[-1]) if not df_d.empty else 0.0,
-                        "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
-                        "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                        "Ticker": t,
+                        "Chart": tv_link,
+                        "Clean Ticker": clean_ticker,
+                        "Last Price": round(curr_close, 2),
+                        "Weekly Stage": "Insufficient Data",
+                        "DC (20)": "-",
+                        "52W High": "-",
+                        "BB(50,2)": "-",
+                        "Satellite Signal": "Insufficient Data",
+                        "Core Signal": "Insufficient Data",
+                        "SL Satellite": round(sl_sat, 2),
+                        "SL Sat Buffer %": round(sl_sat_buffer, 2),
+                        "SL Core": round(sl_core, 2),
+                        "SL Core Buffer %": round(sl_core_buffer, 2),
                         "Classification": "Insufficient Data"
                     })
                     continue
-
-                curr_close = float(df_d["Close"].iloc[-1])
 
                 # 1. Monthly Core
                 m_close = float(df_m["Close"].iloc[-1])
@@ -349,20 +373,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     bear_votes_m = 1 + (1 if vtrend_m_last == -1 else 0)
                     core_signal = f"SELL (XYZ-{bear_votes_m})"
-
-                # 7. Dual Stop Losses & Buffers
-                sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1])
-                sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
-
-                m_open = float(df_m["Open"].iloc[-1])
-                m_ema20 = float(df_m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-                max_allowable_core_sl = m_open * 0.80
-                sl_core = max(m_ema20, max_allowable_core_sl)
-                sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
-
-                clean_ticker = t.split(".")[0]
-                exchange_prefix = "LMS" if t.endswith(".L") else ("BSE" if t.endswith(".BO") else "NSE")
-                tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={exchange_prefix}%3A{clean_ticker}"
 
                 results.append(
                     {
@@ -482,7 +492,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             if "BUY" in val: return "background-color: #228b22; color: white; font-weight: bold"
             if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
             if "HOLD" in val: return "background-color: #1e90ff; color: white; font-weight: bold"
-            return "background-color: #555555; color: #ffdesired; font-style: italic"
+            return "background-color: #555555; color: #ffaaaa; font-style: italic"
 
         display_columns = [
             "Chart", "Ticker", "Last Price", "Weekly Stage", "DC (20)", "52W High", 
