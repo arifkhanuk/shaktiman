@@ -317,7 +317,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     {
                         "Ticker": t,
                         "Chart": tv_link,
-                        "Clean Ticker": clean_ticker,
                         "Last Price": round(curr_close, 2),
                         "Classification": classification,
                         "Weekly Stage": stage,
@@ -337,7 +336,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
     return pd.DataFrame(results)
 
 # ==========================================
-# 2. MAIN DASHBOARD VIEW (SESSION STATE PRESERVATION)
+# 2. MAIN DASHBOARD VIEW
 # ==========================================
 st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
 st.subheader(f"Active Watchlist: `{selected_wl}`")
@@ -444,13 +443,13 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
                 "Chart": st.column_config.LinkColumn(
                     "TradingView Chart",
                     help="Click to open chart on TradingView",
-                    display_text=filtered_df["Clean Ticker"],
+                    display_text=r"symbol=(.*)",
                     pinned=True
                 )
             }
         )
 
-        csv_bytes = filtered_df.drop(columns=["Chart", "Clean Ticker"]).to_csv(index=False).encode("utf-8")
+        csv_bytes = filtered_df.drop(columns=["Chart"]).to_csv(index=False).encode("utf-8")
         st.download_button(
             label=f"📥 Export '{selected_wl}' Results to CSV",
             data=csv_bytes,
