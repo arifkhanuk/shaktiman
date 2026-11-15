@@ -344,10 +344,15 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     core_signal = "Insufficient Data"
 
-                # Apply "BUY / ADD" upgrades using DC Weekly for Satellite and DC Monthly for Core
-                if is_dc_w and sat_signal == "BUY":
+                # Apply "BUY / ADD" upgrades only if DC is active, signal is BUY, and Candle Close > Open
+                w_close_val = float(df_w["Close"].iloc[-1]) if not df_w.empty else 0
+                w_open_val = float(df_w["Open"].iloc[-1]) if not df_w.empty else 0
+                if is_dc_w and sat_signal == "BUY" and w_close_val > w_open_val:
                     sat_signal = "BUY / ADD"
-                if is_dc_m and core_signal == "BUY":
+
+                m_close_val = float(df_m["Close"].iloc[-1]) if not df_m.empty else 0
+                m_open_val = float(df_m["Open"].iloc[-1]) if not df_m.empty else 0
+                if is_dc_m and core_signal == "BUY" and m_close_val > m_open_val:
                     core_signal = "BUY / ADD"
 
                 results.append(
