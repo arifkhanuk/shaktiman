@@ -126,7 +126,7 @@ st.sidebar.divider()
 auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True)
 vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
-# Parse tickers (handling both commas and newlines)
+# Parse tickers and preserve user duplicates if provided multiple times
 parsed_tokens = [t.strip().upper() for t in active_tickers_text.replace("\n", ",").split(",") if t.strip()]
 tickers = []
 for t in parsed_tokens:
@@ -134,7 +134,6 @@ for t in parsed_tokens:
         tickers.append(f"{t}.NS")
     else:
         tickers.append(t)
-tickers = list(dict.fromkeys(tickers))
 
 # ==========================================
 # 1. TECHNICAL ENGINE
@@ -195,7 +194,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
         raw_data = yf.download(
-            tickers=chunk,
+            tickers=list(set(chunk)),  # Download unique tickers once to optimize network fetch
             period="6y",
             interval="1d",
             group_by="ticker",
@@ -214,9 +213,10 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 })
             continue
 
+        # Process each item in the original chunk (preserving duplicates requested by user)
         for t in chunk:
             try:
-                if len(chunk) == 1:
+                if len(set(chunk)) == 1:
                     df_d = raw_data.copy()
                     if isinstance(df_d.columns, pd.MultiIndex):
                         df_d.columns = df_d.columns.get_level_values(0)
@@ -362,7 +362,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
 # ==========================================
 # 2. MAIN DASHBOARD VIEW
 # ==========================================
-st.title("📊 Shaktimaan Hybrid — Multi-Stock Classification & Stop Loss Dashboard")
+st.title("📊 Shaktimaan Hybrid — Multi-Stock Stop Loss & Signal Dashboard")
 st.subheader(f"Active Watchlist: `{selected_wl}`")
 st.write(f"Tokens to scan: `{', '.join(tickers)}`")
 
