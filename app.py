@@ -209,7 +209,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                     "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                     "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
+                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                    "_w_red": False, "_m_red": False
                 })
             continue
 
@@ -225,7 +226,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                             "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                             "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                             "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                            "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
+                            "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                            "_w_red": False, "_m_red": False
                         })
                         continue
                     df_d = raw_data[t].dropna(how="all").copy()
@@ -236,7 +238,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                         "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                         "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
+                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                        "_w_red": False, "_m_red": False
                     })
                     continue
 
@@ -273,7 +276,16 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     stage = "Insufficient Data"
 
-                # Breakout Triggers (DC Weekly, DC Monthly, 52W High, BB)
+                # Candle open/close checks
+                w_close_val = float(df_w["Close"].iloc[-1]) if not df_w.empty else 0
+                w_open_val = float(df_w["Open"].iloc[-1]) if not df_w.empty else 0
+                w_red = w_close_val < w_open_val
+
+                m_close_val = float(df_m["Close"].iloc[-1]) if not df_m.empty else 0
+                m_open_val = float(df_m["Open"].iloc[-1]) if not df_m.empty else 0
+                m_red = m_close_val < m_open_val
+
+                # Breakout Triggers
                 ref_high = float(df_d["High"].iloc[-1])
                 ref_close = float(df_d["Close"].iloc[-1])
                 is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max()) if len(df_d) >= 253 else False
@@ -345,13 +357,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     core_signal = "Insufficient Data"
 
                 # Apply "BUY / ADD" upgrades only if DC is active, signal is BUY, and Candle Close > Open
-                w_close_val = float(df_w["Close"].iloc[-1]) if not df_w.empty else 0
-                w_open_val = float(df_w["Open"].iloc[-1]) if not df_w.empty else 0
                 if is_dc_w and sat_signal == "BUY" and w_close_val > w_open_val:
                     sat_signal = "BUY / ADD"
 
-                m_close_val = float(df_m["Close"].iloc[-1]) if not df_m.empty else 0
-                m_open_val = float(df_m["Open"].iloc[-1]) if not df_m.empty else 0
                 if is_dc_m and core_signal == "BUY" and m_close_val > m_open_val:
                     core_signal = "BUY / ADD"
 
@@ -371,7 +379,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "SL Satellite": round(sl_sat, 2),
                         "SL Sat Buffer %": round(sl_sat_buffer, 2),
                         "SL Core": round(sl_core, 2),
-                        "SL Core Buffer %": round(sl_core_buffer, 2)
+                        "SL Core Buffer %": round(sl_core_buffer, 2),
+                        "_w_red": w_red,
+                        "_m_red": m_red
                     }
                 )
             except Exception:
@@ -379,7 +389,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                     "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                     "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
+                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                    "_w_red": False, "_m_red": False
                 })
 
     return pd.DataFrame(results)
@@ -437,28 +448,73 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     if filtered_df.empty:
         st.warning("No stocks match the selected filter criteria. Try expanding your filter options.")
     else:
-        def style_stage(val):
-            if "Stage 2" in val: return "background-color: #00aa50; color: white; font-weight: bold"
-            if "Stage 1" in val: return "background-color: #808080; color: white"
-            if "Stage 3" in val: return "background-color: #dcb400; color: black; font-weight: bold"
-            if "Stage 4" in val: return "background-color: #dc5064; color: white"
-            if "Insufficient Data" in val: return "background-color: #555555; color: #ffaaaa; font-style: italic"
-            return ""
+        def highlight_cells(row):
+            styles = [''] * len(row)
+            col_map = {col: i for i, col in enumerate(row.index)}
 
-        def style_dc(val):
-            return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if val == "DC" else "color: #666666"
+            # Weekly Stage
+            stage = row.get("Weekly Stage", "")
+            if "Stage 2" in stage:
+                styles[col_map["Weekly Stage"]] = "background-color: #00aa50; color: white; font-weight: bold"
+            elif "Stage 1" in stage:
+                styles[col_map["Weekly Stage"]] = "background-color: #808080; color: white"
+            elif "Stage 3" in stage:
+                styles[col_map["Weekly Stage"]] = "background-color: #dcb400; color: black; font-weight: bold"
+            elif "Stage 4" in stage:
+                styles[col_map["Weekly Stage"]] = "background-color: #dc5064; color: white"
+            elif "Insufficient Data" in stage:
+                styles[col_map["Weekly Stage"]] = "background-color: #555555; color: #ffaaaa; font-style: italic"
 
-        def style_52w(val):
-            return "background-color: #196e2d; color: #64b4ff; font-weight: bold" if val == "52W" else "color: #666666"
+            # DC Weekly (White text normally, amber ONLY if red candle Close < Open)
+            dc_w = row.get("DC Weekly", "-")
+            w_red = row.get("_w_red", False)
+            if "DC" in str(dc_w):
+                if w_red:
+                    styles[col_map["DC Weekly"]] = "background-color: #196e2d; color: #ffbf00; font-weight: bold"
+                else:
+                    styles[col_map["DC Weekly"]] = "background-color: #196e2d; color: #ffffff; font-weight: bold"
+            else:
+                styles[col_map["DC Weekly"]] = "color: #666666"
 
-        def style_bb(val):
-            return "background-color: #196e2d; color: #d782ff; font-weight: bold" if val == "BB(50,2)" else "color: #666666"
+            # DC Monthly (White text normally, amber ONLY if red candle Close < Open)
+            dc_m = row.get("DC Monthly", "-")
+            m_red = row.get("_m_red", False)
+            if "DC" in str(dc_m):
+                if m_red:
+                    styles[col_map["DC Monthly"]] = "background-color: #196e2d; color: #ffbf00; font-weight: bold"
+                else:
+                    styles[col_map["DC Monthly"]] = "background-color: #196e2d; color: #ffffff; font-weight: bold"
+            else:
+                styles[col_map["DC Monthly"]] = "color: #666666"
 
-        def style_signal(val):
-            if "BUY" in val: return "background-color: #228b22; color: white; font-weight: bold"
-            if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
-            if "HOLD" in val: return "background-color: #1e90ff; color: white; font-weight: bold"
-            return "background-color: #555555; color: #ffaaaa; font-style: italic"
+            # 52W High
+            w52 = row.get("52W High", "-")
+            if w52 == "52W":
+                styles[col_map["52W High"]] = "background-color: #196e2d; color: #64b4ff; font-weight: bold"
+            else:
+                styles[col_map["52W High"]] = "color: #666666"
+
+            # BB(50,2)
+            bb = row.get("BB(50,2)", "-")
+            if bb == "BB(50,2)":
+                styles[col_map["BB(50,2)"]] = "background-color: #196e2d; color: #d782ff; font-weight: bold"
+            else:
+                styles[col_map["BB(50,2)"]] = "color: #666666"
+
+            # Satellite Signal & Core Signal
+            for sig_col in ["Satellite Signal", "Core Signal"]:
+                if sig_col in col_map:
+                    sig = row.get(sig_col, "")
+                    if "BUY" in sig:
+                        styles[col_map[sig_col]] = "background-color: #228b22; color: white; font-weight: bold"
+                    elif "SELL" in sig:
+                        styles[col_map[sig_col]] = "background-color: #dc143c; color: white; font-weight: bold"
+                    elif "HOLD" in sig:
+                        styles[col_map[sig_col]] = "background-color: #1e90ff; color: white; font-weight: bold"
+                    else:
+                        styles[col_map[sig_col]] = "background-color: #555555; color: #ffaaaa; font-style: italic"
+
+            return styles
 
         display_columns = [
             "Chart", "Ticker", "Last Price", "Weekly Stage", "DC Weekly", "DC Monthly", "52W High", 
@@ -466,20 +522,22 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             "SL Sat Buffer %", "SL Core", "SL Core Buffer %"
         ]
 
-        st.dataframe(
-            filtered_df[display_columns].style
-            .map(style_stage, subset=["Weekly Stage"])
-            .map(style_dc, subset=["DC Weekly", "DC Monthly"])
-            .map(style_52w, subset=["52W High"])
-            .map(style_bb, subset=["BB(50,2)"])
-            .map(style_signal, subset=["Satellite Signal", "Core Signal"])
+        styled_df = (
+            filtered_df[display_columns + ["_w_red", "_m_red"]]
+            .style
+            .apply(highlight_cells, axis=1)
+            .hide(subset=["_w_red", "_m_red"], axis="columns")
             .format({
                 "Last Price": "{:.2f}", 
                 "SL Satellite": "{:.2f}", 
                 "SL Sat Buffer %": "{:.2f}%",
                 "SL Core": "{:.2f}",
                 "SL Core Buffer %": "{:.2f}%"
-            }), 
+            })
+        )
+
+        st.dataframe(
+            styled_df, 
             use_container_width=True, 
             height=550,
             column_config={
@@ -492,7 +550,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             }
         )
 
-        csv_bytes = filtered_df.drop(columns=["Chart", "Clean Ticker"]).to_csv(index=False).encode("utf-8")
+        csv_bytes = filtered_df.drop(columns=["Chart", "Clean Ticker", "_w_red", "_m_red"], errors="ignore").to_csv(index=False).encode("utf-8")
         st.download_button(
             label=f"📥 Export '{selected_wl}' Results to CSV",
             data=csv_bytes,
