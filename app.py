@@ -283,7 +283,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
-                # 5. Satellite Signal (Calculated using Weekly Candles df_w)
+                # 5. Satellite Signal (Weekly Candles)
                 rsi_w = compute_rsi(df_w["Close"], 14)
                 rsi_w_ma = rsi_w.rolling(14).mean()
                 curr_rsi_w = float(rsi_w.iloc[-1])
@@ -300,7 +300,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     bear_votes_w = 1 + (1 if vtrend_w_last == -1 else 0)
                     sat_signal = f"SELL (XYZ-{bear_votes_w})"
 
-                # 6. Core Signal (Calculated using Monthly Candles df_m)
+                # 6. Core Signal (Monthly Candles)
                 rsi_m = compute_rsi(df_m["Close"], 14)
                 rsi_m_ma = rsi_m.rolling(14).mean()
                 curr_rsi_m = float(rsi_m.iloc[-1])
@@ -328,7 +328,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
                 clean_ticker = t.split(".")[0]
-                tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={clean_ticker}"
+                # Format mobile-friendly TradingView URL with exchange prefix (e.g. NSE%3ACARYSIL)
+                exchange_prefix = "LMS" if t.endswith(".L") else ("BSE" if t.endswith(".BO") else "NSE")
+                tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={exchange_prefix}%3A{clean_ticker}"
 
                 results.append(
                     {
@@ -346,7 +348,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "SL Sat Buffer %": round(sl_sat_buffer, 2),
                         "SL Core": round(sl_core, 2),
                         "SL Core Buffer %": round(sl_core_buffer, 2),
-                        "Classification": classification  # Moved to the end
+                        "Classification": classification
                     }
                 )
             except Exception:
@@ -468,7 +470,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
                 "Chart": st.column_config.LinkColumn(
                     "TradingView Chart",
                     help="Click to open chart on TradingView",
-                    display_text=r"symbol=(.*)",
+                    display_text=r"symbol=(?:.*)%3A(.*)",
                     pinned=True
                 )
             }
