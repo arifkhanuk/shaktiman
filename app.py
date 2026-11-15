@@ -299,8 +299,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     is_bb = False
 
-                dc_w_col = "DC Weekly" if is_dc_w else "-"
-                dc_m_col = "DC Monthly" if is_dc_m else "-"
+                dc_w_col = "DC" if is_dc_w else "-"
+                dc_m_col = "DC" if is_dc_m else "-"
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
@@ -441,7 +441,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             return ""
 
         def style_dc(val):
-            return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if "DC" in val else "color: #666666"
+            return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if val == "DC" else "color: #666666"
 
         def style_52w(val):
             return "background-color: #196e2d; color: #64b4ff; font-weight: bold" if val == "52W" else "color: #666666"
