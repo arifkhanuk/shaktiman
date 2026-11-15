@@ -210,8 +210,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                     "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
                     "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
-                    "Classification": "Insufficient Data"
+                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                 })
             continue
 
@@ -227,8 +226,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                             "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                             "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
                             "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                            "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
-                            "Classification": "Insufficient Data"
+                            "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                         })
                         continue
                     df_d = raw_data[t].dropna(how="all").copy()
@@ -239,8 +237,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                         "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
                         "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
-                        "Classification": "Insufficient Data"
+                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                     })
                     continue
 
@@ -253,7 +250,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 exchange_prefix = "LMS" if t.endswith(".L") else ("BSE" if t.endswith(".BO") else "NSE")
                 tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={exchange_prefix}%3A{clean_ticker}"
 
-                # Compute Stop Losses even if history is partially short
+                # Compute Stop Losses
                 sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1]) if len(df_w) >= 13 else curr_close * 0.95
                 sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
 
@@ -263,116 +260,76 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 sl_core = max(m_ema20, max_allowable_core_sl)
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
-                # Check if enough history exists for advanced classifications/signals
-                if len(df_m) < 61 or len(df_w) < 53 or len(df_d) < 252:
-                    results.append({
-                        "Ticker": t,
-                        "Chart": tv_link,
-                        "Clean Ticker": clean_ticker,
-                        "Last Price": round(curr_close, 2),
-                        "Weekly Stage": "Insufficient Data",
-                        "DC (20)": "-",
-                        "52W High": "-",
-                        "BB(50,2)": "-",
-                        "Satellite Signal": "Insufficient Data",
-                        "Core Signal": "Insufficient Data",
-                        "SL Satellite": round(sl_sat, 2),
-                        "SL Sat Buffer %": round(sl_sat_buffer, 2),
-                        "SL Core": round(sl_core, 2),
-                        "SL Core Buffer %": round(sl_core_buffer, 2),
-                        "Classification": "Insufficient Data"
-                    })
-                    continue
-
-                # 1. Monthly Core
-                m_close = float(df_m["Close"].iloc[-1])
-                m_sma20 = float(df_m["Close"].rolling(20).mean().iloc[-1])
-                m_sma60 = float(df_m["Close"].rolling(60).mean().iloc[-1])
-                m_close12 = float(df_m["Close"].iloc[-13])
-                m_roc12 = ((m_close - m_close12) / m_close12) * 100.0
-                tf_core = (m_close > m_sma60) and (m_sma20 > m_sma60) and (m_roc12 > 15.0)
-
-                # 2. Weekly Satellite
-                w_close = float(df_w["Close"].iloc[-1])
-                w_vol = float(df_w["Volume"].iloc[-1])
-                w_vol_sma20 = float(df_w["Volume"].rolling(20).mean().iloc[-1])
-                w_high = float(df_w["High"].iloc[-1])
-                w_high52 = float(df_w["High"].iloc[-53:-1].max())
-                w_ema21 = float(df_w["Close"].ewm(span=21, adjust=False).mean().iloc[-1])
-                w_close13 = float(df_w["Close"].iloc[-14])
-                w_roc13 = ((w_close - w_close13) / w_close13) * 100.0
-
-                w_vol_spike = w_vol > (w_vol_sma20 * vol_mult)
-                w_52w_high = w_high >= w_high52
-                tf_satellite = (w_roc13 > 25.0) or w_vol_spike or (w_close > w_ema21 and not tf_core)
-
-                if tf_core and tf_satellite:
-                    classification = "CORE+SATELLITE"
-                elif tf_core:
-                    classification = "CORE"
-                elif tf_satellite:
-                    classification = "SATELLITE"
+                # Weekly Stage
+                if len(df_w) >= 6:
+                    w_ema20_s = df_w["Close"].ewm(span=20, adjust=False).mean()
+                    w_ema20 = float(w_ema20_s.iloc[-1])
+                    w_ema20_past = float(w_ema20_s.iloc[-6])
+                    w_slope = (w_ema20 - w_ema20_past) / w_ema20_past
+                    w_close_val = float(df_w["Close"].iloc[-1])
+                    if w_close_val > w_ema20:
+                        stage = "Stage 1: Basing" if w_slope < -0.0005 else "Stage 2: Advancing"
+                    else:
+                        stage = "Stage 3: Distribution" if w_slope >= -0.0005 else "Stage 4: Declining"
                 else:
-                    classification = "Neither"
+                    stage = "Insufficient Data"
 
-                # 3. Weekly Stage
-                w_ema20_s = df_w["Close"].ewm(span=20, adjust=False).mean()
-                w_ema20 = float(w_ema20_s.iloc[-1])
-                w_ema20_past = float(w_ema20_s.iloc[-6])
-                w_slope = (w_ema20 - w_ema20_past) / w_ema20_past
-
-                if w_close > w_ema20:
-                    stage = "Stage 1: Basing" if w_slope < -0.0005 else "Stage 2: Advancing"
-                else:
-                    stage = "Stage 3: Distribution" if w_slope >= -0.0005 else "Stage 4: Declining"
-
-                # 4. Breakout Triggers
+                # Breakout Triggers
                 ref_high = float(df_d["High"].iloc[-1])
                 ref_close = float(df_d["Close"].iloc[-1])
-                is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max())
-                is_dc = ref_high > float(df_d["High"].iloc[-21:-1].max())
+                is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max()) if len(df_d) >= 253 else False
+                is_dc = ref_high > float(df_d["High"].iloc[-21:-1].max()) if len(df_d) >= 21 else False
 
-                bb_basis = df_d["Close"].rolling(50).mean().iloc[-1]
-                bb_std = df_d["Close"].rolling(50).std().iloc[-1]
-                is_bb = ref_close > (bb_basis + 2.0 * bb_std)
+                if len(df_d) >= 50:
+                    bb_basis = df_d["Close"].rolling(50).mean().iloc[-1]
+                    bb_std = df_d["Close"].rolling(50).std().iloc[-1]
+                    is_bb = ref_close > (bb_basis + 2.0 * bb_std)
+                else:
+                    is_bb = False
 
                 dc_col = "DC" if is_dc else "-"
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
-                # 5. Satellite Signal (Weekly Candles df_w)
-                rsi_w = compute_rsi(df_w["Close"], 14)
-                rsi_w_ma = rsi_w.rolling(14).mean()
-                curr_rsi_w = float(rsi_w.iloc[-1])
-                curr_rsi_w_ma = float(rsi_w_ma.iloc[-1])
-                _, vtrend_w_last = compute_vstop(df_w["Close"], df_w["High"], df_w["Low"])
+                # Satellite Signal (Weekly Candles df_w)
+                if len(df_w) >= 14:
+                    rsi_w = compute_rsi(df_w["Close"], 14)
+                    rsi_w_ma = rsi_w.rolling(14).mean()
+                    curr_rsi_w = float(rsi_w.iloc[-1])
+                    curr_rsi_w_ma = float(rsi_w_ma.iloc[-1])
+                    _, vtrend_w_last = compute_vstop(df_w["Close"], df_w["High"], df_w["Low"])
 
-                if curr_rsi_w >= 55:
-                    if curr_rsi_w >= curr_rsi_w_ma:
-                        abc_w = 3 if curr_rsi_w > 70 else (2 if curr_rsi_w >= 60 else 1)
+                    if curr_rsi_w >= 55:
+                        if curr_rsi_w >= curr_rsi_w_ma:
+                            abc_w = 3 if curr_rsi_w > 70 else (2 if curr_rsi_w >= 60 else 1)
+                        else:
+                            abc_w = 3 if curr_rsi_w > 74 else (2 if curr_rsi_w >= 65 else 1)
+                        sat_signal = "BUY" if abc_w >= 2 else "HOLD / TRIM"
                     else:
-                        abc_w = 3 if curr_rsi_w > 74 else (2 if curr_rsi_w >= 65 else 1)
-                    sat_signal = "BUY" if abc_w >= 2 else "HOLD / TRIM"
+                        bear_votes_w = 1 + (1 if vtrend_w_last == -1 else 0)
+                        sat_signal = f"SELL (XYZ-{bear_votes_w})"
                 else:
-                    bear_votes_w = 1 + (1 if vtrend_w_last == -1 else 0)
-                    sat_signal = f"SELL (XYZ-{bear_votes_w})"
+                    sat_signal = "Insufficient Data"
 
-                # 6. Core Signal (Monthly Candles df_m)
-                rsi_m = compute_rsi(df_m["Close"], 14)
-                rsi_m_ma = rsi_m.rolling(14).mean()
-                curr_rsi_m = float(rsi_m.iloc[-1])
-                curr_rsi_m_ma = float(rsi_m_ma.iloc[-1])
-                _, vtrend_m_last = compute_vstop(df_m["Close"], df_m["High"], df_m["Low"])
+                # Core Signal (Monthly Candles df_m)
+                if len(df_m) >= 14:
+                    rsi_m = compute_rsi(df_m["Close"], 14)
+                    rsi_m_ma = rsi_m.rolling(14).mean()
+                    curr_rsi_m = float(rsi_m.iloc[-1])
+                    curr_rsi_m_ma = float(rsi_m_ma.iloc[-1])
+                    _, vtrend_m_last = compute_vstop(df_m["Close"], df_m["High"], df_m["Low"])
 
-                if curr_rsi_m >= 55:
-                    if curr_rsi_m >= curr_rsi_m_ma:
-                        abc_m = 3 if curr_rsi_m > 70 else (2 if curr_rsi_m >= 60 else 1)
+                    if curr_rsi_m >= 55:
+                        if curr_rsi_m >= curr_rsi_m_ma:
+                            abc_m = 3 if curr_rsi_m > 70 else (2 if curr_rsi_m >= 60 else 1)
+                        else:
+                            abc_m = 3 if curr_rsi_m > 74 else (2 if curr_rsi_m >= 65 else 1)
+                        core_signal = "BUY" if abc_m >= 2 else "HOLD / TRIM"
                     else:
-                        abc_m = 3 if curr_rsi_m > 74 else (2 if curr_rsi_m >= 65 else 1)
-                    core_signal = "BUY" if abc_m >= 2 else "HOLD / TRIM"
+                        bear_votes_m = 1 + (1 if vtrend_m_last == -1 else 0)
+                        core_signal = f"SELL (XYZ-{bear_votes_m})"
                 else:
-                    bear_votes_m = 1 + (1 if vtrend_m_last == -1 else 0)
-                    core_signal = f"SELL (XYZ-{bear_votes_m})"
+                    core_signal = "Insufficient Data"
 
                 results.append(
                     {
@@ -389,8 +346,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "SL Satellite": round(sl_sat, 2),
                         "SL Sat Buffer %": round(sl_sat_buffer, 2),
                         "SL Core": round(sl_core, 2),
-                        "SL Core Buffer %": round(sl_core_buffer, 2),
-                        "Classification": classification
+                        "SL Core Buffer %": round(sl_core_buffer, 2)
                     }
                 )
             except Exception:
@@ -398,8 +354,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                     "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
                     "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
-                    "Classification": "Insufficient Data"
+                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                 })
 
     return pd.DataFrame(results)
@@ -426,25 +381,20 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     df_out = st.session_state.scan_results
 
     st.markdown("### 🔍 Filter Results")
-    f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
     with f_col1:
-        class_options = ["CORE+SATELLITE", "CORE", "SATELLITE", "Neither", "Insufficient Data"]
-        selected_classes = st.multiselect("Classification", options=class_options, default=class_options, key="filter_class")
-    with f_col2:
         stage_options = ["Stage 1: Basing", "Stage 2: Advancing", "Stage 3: Distribution", "Stage 4: Declining", "Insufficient Data"]
         selected_stages = st.multiselect("Weekly Stage", options=stage_options, default=stage_options, key="filter_stage")
-    with f_col3:
+    with f_col2:
         search_query = st.text_input("Ticker Search", "", key="filter_search").strip().upper()
-    with f_col4:
+    with f_col3:
         signal_options = ["BUY", "HOLD / TRIM", "SELL", "Insufficient Data"]
         selected_signal = st.selectbox("Signal Filter (Satellite)", options=["All"] + signal_options, key="filter_signal")
-    with f_col5:
+    with f_col4:
         only_breakouts = st.checkbox("Active Breakouts Only", value=False, key="filter_breakouts")
 
     # Apply filtering logic safely
     filtered_df = df_out.copy()
-    if selected_classes:
-        filtered_df = filtered_df[filtered_df["Classification"].isin(selected_classes)]
     if selected_stages:
         filtered_df = filtered_df[filtered_df["Weekly Stage"].apply(lambda x: any(s in x for s in selected_stages))]
     if search_query:
@@ -461,16 +411,6 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     if filtered_df.empty:
         st.warning("No stocks match the selected filter criteria. Try expanding your filter options.")
     else:
-        def style_class(val):
-            palette = {
-                "CORE+SATELLITE": "background-color: #008755; color: white; font-weight: bold",
-                "CORE": "background-color: #147341; color: white; font-weight: bold",
-                "SATELLITE": "background-color: #235aa0; color: white; font-weight: bold",
-                "Neither": "background-color: #323232; color: #bbbbbb",
-                "Insufficient Data": "background-color: #555555; color: #ffaaaa; font-style: italic"
-            }
-            return palette.get(val, "")
-
         def style_stage(val):
             if "Stage 2" in val: return "background-color: #00aa50; color: white; font-weight: bold"
             if "Stage 1" in val: return "background-color: #808080; color: white"
@@ -497,12 +437,11 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
         display_columns = [
             "Chart", "Ticker", "Last Price", "Weekly Stage", "DC (20)", "52W High", 
             "BB(50,2)", "Satellite Signal", "Core Signal", "SL Satellite", 
-            "SL Sat Buffer %", "SL Core", "SL Core Buffer %", "Classification"
+            "SL Sat Buffer %", "SL Core", "SL Core Buffer %"
         ]
 
         st.dataframe(
             filtered_df[display_columns].style
-            .map(style_class, subset=["Classification"])
             .map(style_stage, subset=["Weekly Stage"])
             .map(style_dc, subset=["DC (20)"])
             .map(style_52w, subset=["52W High"])
