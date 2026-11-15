@@ -207,13 +207,12 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
             for t in chunk:
                 results.append({
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                    "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                    "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                     "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
                     "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                 })
             continue
 
-        # Process each item in the original chunk (preserving duplicates requested by user)
         for t in chunk:
             try:
                 if len(set(chunk)) == 1:
@@ -224,7 +223,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     if t not in raw_data.columns.get_level_values(0):
                         results.append({
                             "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                            "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                            "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                             "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
                             "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                         })
@@ -235,7 +234,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 if len(df_d) < 50:
                     results.append({
                         "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                        "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                        "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                         "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
                         "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                     })
@@ -274,11 +273,24 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     stage = "Insufficient Data"
 
-                # Breakout Triggers
+                # Breakout Triggers (DC Weekly, DC Monthly, 52W High, BB)
                 ref_high = float(df_d["High"].iloc[-1])
                 ref_close = float(df_d["Close"].iloc[-1])
                 is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max()) if len(df_d) >= 253 else False
-                is_dc = ref_high > float(df_d["High"].iloc[-21:-1].max()) if len(df_d) >= 21 else False
+
+                # DC Weekly (20 periods on weekly high)
+                is_dc_w = False
+                if len(df_w) >= 21:
+                    w_high_curr = float(df_w["High"].iloc[-1])
+                    w_high_prev_max = float(df_w["High"].iloc[-21:-1].max())
+                    is_dc_w = w_high_curr > w_high_prev_max
+
+                # DC Monthly (20 periods on monthly high)
+                is_dc_m = False
+                if len(df_m) >= 21:
+                    m_high_curr = float(df_m["High"].iloc[-1])
+                    m_high_prev_max = float(df_m["High"].iloc[-21:-1].max())
+                    is_dc_m = m_high_curr > m_high_prev_max
 
                 if len(df_d) >= 50:
                     bb_basis = df_d["Close"].rolling(50).mean().iloc[-1]
@@ -287,7 +299,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     is_bb = False
 
-                dc_col = "DC" if is_dc else "-"
+                dc_w_col = "DC Weekly" if is_dc_w else "-"
+                dc_m_col = "DC Monthly" if is_dc_m else "-"
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
@@ -331,12 +344,11 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     core_signal = "Insufficient Data"
 
-                # Apply "BUY / ADD" upgrade if DC criteria is met and signal is BUY
-                if dc_col == "DC":
-                    if sat_signal == "BUY":
-                        sat_signal = "BUY / ADD"
-                    if core_signal == "BUY":
-                        core_signal = "BUY / ADD"
+                # Apply "BUY / ADD" upgrades using DC Weekly for Satellite and DC Monthly for Core
+                if is_dc_w and sat_signal == "BUY":
+                    sat_signal = "BUY / ADD"
+                if is_dc_m and core_signal == "BUY":
+                    core_signal = "BUY / ADD"
 
                 results.append(
                     {
@@ -345,7 +357,8 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "Clean Ticker": clean_ticker,
                         "Last Price": round(curr_close, 2),
                         "Weekly Stage": stage,
-                        "DC (20)": dc_col,
+                        "DC Weekly": dc_w_col,
+                        "DC Monthly": dc_m_col,
                         "52W High": w52_col,
                         "BB(50,2)": bb_col,
                         "Satellite Signal": sat_signal,
@@ -359,7 +372,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
             except Exception:
                 results.append({
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                    "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                    "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
                     "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
                     "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0
                 })
@@ -410,7 +423,8 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
         filtered_df = filtered_df[filtered_df["Satellite Signal"].str.contains(selected_signal)]
     if only_breakouts:
         filtered_df = filtered_df[
-            (filtered_df["DC (20)"] != "-")
+            (filtered_df["DC Weekly"] != "-")
+            | (filtered_df["DC Monthly"] != "-")
             | (filtered_df["52W High"] != "-")
             | (filtered_df["BB(50,2)"] != "-")
         ]
@@ -427,7 +441,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             return ""
 
         def style_dc(val):
-            return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if val == "DC" else "color: #666666"
+            return "background-color: #196e2d; color: #ffbf00; font-weight: bold" if "DC" in val else "color: #666666"
 
         def style_52w(val):
             return "background-color: #196e2d; color: #64b4ff; font-weight: bold" if val == "52W" else "color: #666666"
@@ -442,7 +456,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             return "background-color: #555555; color: #ffaaaa; font-style: italic"
 
         display_columns = [
-            "Chart", "Ticker", "Last Price", "Weekly Stage", "DC (20)", "52W High", 
+            "Chart", "Ticker", "Last Price", "Weekly Stage", "DC Weekly", "DC Monthly", "52W High", 
             "BB(50,2)", "Satellite Signal", "Core Signal", "SL Satellite", 
             "SL Sat Buffer %", "SL Core", "SL Core Buffer %"
         ]
@@ -450,7 +464,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
         st.dataframe(
             filtered_df[display_columns].style
             .map(style_stage, subset=["Weekly Stage"])
-            .map(style_dc, subset=["DC (20)"])
+            .map(style_dc, subset=["DC Weekly", "DC Monthly"])
             .map(style_52w, subset=["52W High"])
             .map(style_bb, subset=["BB(50,2)"])
             .map(style_signal, subset=["Satellite Signal", "Core Signal"])
