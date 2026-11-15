@@ -89,7 +89,7 @@ selected_wl = st.sidebar.selectbox("Select Active Watchlist", available_mls)
 
 # Handle Watchlist Content / Manual Input
 if selected_wl == "✏️ Enter Manual Tickers":
-    active_tickers_text = st.sidebar.text_area("Type Tickers (comma or newline separated)", "RELIANCE, TCS, INFY, ITC", height=120, help="Type or paste your stock symbols directly here.")
+    active_tickers_text = st.sidebar.text_area("Type Tickers (comma or newline separated)", "RELIANCE, TCS, INFY, ATHERENERG, PPLPHARMA", height=120, help="Type or paste your stock symbols directly here.")
     st.sidebar.caption("⚠️ Custom manual input for this session.")
 elif selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
     new_wl_name = st.sidebar.text_input("New Watchlist Name")
@@ -205,6 +205,14 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
         )
 
         if raw_data.empty:
+            for t in chunk:
+                results.append({
+                    "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
+                    "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                    "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
+                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                    "Classification": "Insufficient Data"
+                })
             continue
 
         for t in chunk:
@@ -215,11 +223,25 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         df_d.columns = df_d.columns.get_level_values(0)
                 else:
                     if t not in raw_data.columns.get_level_values(0):
+                        results.append({
+                            "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
+                            "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                            "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
+                            "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                            "Classification": "Insufficient Data"
+                        })
                         continue
                     df_d = raw_data[t].dropna(how="all").copy()
 
                 df_d = df_d.dropna(subset=["Close", "High", "Low", "Volume"])
                 if len(df_d) < 252:
+                    results.append({
+                        "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
+                        "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                        "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
+                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                        "Classification": "Insufficient Data"
+                    })
                     continue
 
                 agg_rules = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
@@ -227,6 +249,13 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 df_m = df_d.resample("ME").agg(agg_rules).dropna()
 
                 if len(df_m) < 61 or len(df_w) < 53:
+                    results.append({
+                        "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": float(df_d["Close"].iloc[-1]) if not df_d.empty else 0.0,
+                        "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                        "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
+                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                        "Classification": "Insufficient Data"
+                    })
                     continue
 
                 curr_close = float(df_d["Close"].iloc[-1])
@@ -287,7 +316,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
-                # 5. Satellite Signal (Weekly Candles)
+                # 5. Satellite Signal (Weekly Candles df_w)
                 rsi_w = compute_rsi(df_w["Close"], 14)
                 rsi_w_ma = rsi_w.rolling(14).mean()
                 curr_rsi_w = float(rsi_w.iloc[-1])
@@ -304,7 +333,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     bear_votes_w = 1 + (1 if vtrend_w_last == -1 else 0)
                     sat_signal = f"SELL (XYZ-{bear_votes_w})"
 
-                # 6. Core Signal (Monthly Candles)
+                # 6. Core Signal (Monthly Candles df_m)
                 rsi_m = compute_rsi(df_m["Close"], 14)
                 rsi_m_ma = rsi_m.rolling(14).mean()
                 curr_rsi_m = float(rsi_m.iloc[-1])
@@ -355,7 +384,13 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     }
                 )
             except Exception:
-                continue
+                results.append({
+                    "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
+                    "Weekly Stage": "Insufficient Data", "DC (20)": "-", "52W High": "-", "BB(50,2)": "-",
+                    "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
+                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                    "Classification": "Insufficient Data"
+                })
 
     return pd.DataFrame(results)
 
@@ -383,15 +418,15 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     st.markdown("### 🔍 Filter Results")
     f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
     with f_col1:
-        class_options = ["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"]
+        class_options = ["CORE+SATELLITE", "CORE", "SATELLITE", "Neither", "Insufficient Data"]
         selected_classes = st.multiselect("Classification", options=class_options, default=class_options, key="filter_class")
     with f_col2:
-        stage_options = ["Stage 1: Basing", "Stage 2: Advancing", "Stage 3: Distribution", "Stage 4: Declining"]
+        stage_options = ["Stage 1: Basing", "Stage 2: Advancing", "Stage 3: Distribution", "Stage 4: Declining", "Insufficient Data"]
         selected_stages = st.multiselect("Weekly Stage", options=stage_options, default=stage_options, key="filter_stage")
     with f_col3:
         search_query = st.text_input("Ticker Search", "", key="filter_search").strip().upper()
     with f_col4:
-        signal_options = ["BUY", "HOLD / TRIM", "SELL"]
+        signal_options = ["BUY", "HOLD / TRIM", "SELL", "Insufficient Data"]
         selected_signal = st.selectbox("Signal Filter (Satellite)", options=["All"] + signal_options, key="filter_signal")
     with f_col5:
         only_breakouts = st.checkbox("Active Breakouts Only", value=False, key="filter_breakouts")
@@ -422,6 +457,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
                 "CORE": "background-color: #147341; color: white; font-weight: bold",
                 "SATELLITE": "background-color: #235aa0; color: white; font-weight: bold",
                 "Neither": "background-color: #323232; color: #bbbbbb",
+                "Insufficient Data": "background-color: #555555; color: #ffaaaa; font-style: italic"
             }
             return palette.get(val, "")
 
@@ -430,6 +466,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             if "Stage 1" in val: return "background-color: #808080; color: white"
             if "Stage 3" in val: return "background-color: #dcb400; color: black; font-weight: bold"
             if "Stage 4" in val: return "background-color: #dc5064; color: white"
+            if "Insufficient Data" in val: return "background-color: #555555; color: #ffaaaa; font-style: italic"
             return ""
 
         def style_dc(val):
@@ -444,7 +481,8 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
         def style_signal(val):
             if "BUY" in val: return "background-color: #228b22; color: white; font-weight: bold"
             if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
-            return "background-color: #1e90ff; color: white; font-weight: bold"
+            if "HOLD" in val: return "background-color: #1e90ff; color: white; font-weight: bold"
+            return "background-color: #555555; color: #ffdesired; font-style: italic"
 
         display_columns = [
             "Chart", "Ticker", "Last Price", "Weekly Stage", "DC (20)", "52W High", 
