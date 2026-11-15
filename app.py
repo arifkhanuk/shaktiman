@@ -331,6 +331,13 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     core_signal = "Insufficient Data"
 
+                # Apply "BUY / ADD" upgrade if DC criteria is met and signal is BUY
+                if dc_col == "DC":
+                    if sat_signal == "BUY":
+                        sat_signal = "BUY / ADD"
+                    if core_signal == "BUY":
+                        core_signal = "BUY / ADD"
+
                 results.append(
                     {
                         "Ticker": t,
@@ -388,7 +395,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     with f_col2:
         search_query = st.text_input("Ticker Search", "", key="filter_search").strip().upper()
     with f_col3:
-        signal_options = ["BUY", "HOLD / TRIM", "SELL", "Insufficient Data"]
+        signal_options = ["BUY", "BUY / ADD", "HOLD / TRIM", "SELL", "Insufficient Data"]
         selected_signal = st.selectbox("Signal Filter (Satellite)", options=["All"] + signal_options, key="filter_signal")
     with f_col4:
         only_breakouts = st.checkbox("Active Breakouts Only", value=False, key="filter_breakouts")
