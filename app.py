@@ -283,24 +283,41 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
-                # 5. Signal & Action
-                rsi_s = compute_rsi(df_d["Close"], 14)
-                rsi_ma_s = rsi_s.rolling(14).mean()
-                curr_rsi = float(rsi_s.iloc[-1])
-                curr_rsi_ma = float(rsi_ma_s.iloc[-1])
-                _, vtrend_last = compute_vstop(df_d["Close"], df_d["High"], df_d["Low"])
+                # 5. Satellite Signal (Calculated using Weekly Candles df_w)
+                rsi_w = compute_rsi(df_w["Close"], 14)
+                rsi_w_ma = rsi_w.rolling(14).mean()
+                curr_rsi_w = float(rsi_w.iloc[-1])
+                curr_rsi_w_ma = float(rsi_w_ma.iloc[-1])
+                _, vtrend_w_last = compute_vstop(df_w["Close"], df_w["High"], df_w["Low"])
 
-                if curr_rsi >= 55:
-                    if curr_rsi >= curr_rsi_ma:
-                        abc = 3 if curr_rsi > 70 else (2 if curr_rsi >= 60 else 1)
+                if curr_rsi_w >= 55:
+                    if curr_rsi_w >= curr_rsi_w_ma:
+                        abc_w = 3 if curr_rsi_w > 70 else (2 if curr_rsi_w >= 60 else 1)
                     else:
-                        abc = 3 if curr_rsi > 74 else (2 if curr_rsi >= 65 else 1)
-                    rec = "BUY" if abc >= 2 else "HOLD / TRIM"
+                        abc_w = 3 if curr_rsi_w > 74 else (2 if curr_rsi_w >= 65 else 1)
+                    sat_signal = "BUY" if abc_w >= 2 else "HOLD / TRIM"
                 else:
-                    bear_votes = 1 + (1 if vtrend_last == -1 else 0)
-                    rec = f"SELL (XYZ-{bear_votes})"
+                    bear_votes_w = 1 + (1 if vtrend_w_last == -1 else 0)
+                    sat_signal = f"SELL (XYZ-{bear_votes_w})"
 
-                # 6. Dual Stop Losses & Buffers
+                # 6. Core Signal (Calculated using Monthly Candles df_m)
+                rsi_m = compute_rsi(df_m["Close"], 14)
+                rsi_m_ma = rsi_m.rolling(14).mean()
+                curr_rsi_m = float(rsi_m.iloc[-1])
+                curr_rsi_m_ma = float(rsi_m_ma.iloc[-1])
+                _, vtrend_m_last = compute_vstop(df_m["Close"], df_m["High"], df_m["Low"])
+
+                if curr_rsi_m >= 55:
+                    if curr_rsi_m >= curr_rsi_m_ma:
+                        abc_m = 3 if curr_rsi_m > 70 else (2 if curr_rsi_m >= 60 else 1)
+                    else:
+                        abc_m = 3 if curr_rsi_m > 74 else (2 if curr_rsi_m >= 65 else 1)
+                    core_signal = "BUY" if abc_m >= 2 else "HOLD / TRIM"
+                else:
+                    bear_votes_m = 1 + (1 if vtrend_m_last == -1 else 0)
+                    core_signal = f"SELL (XYZ-{bear_votes_m})"
+
+                # 7. Dual Stop Losses & Buffers
                 sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1])
                 sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
 
@@ -317,17 +334,19 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     {
                         "Ticker": t,
                         "Chart": tv_link,
+                        "Clean Ticker": clean_ticker,
                         "Last Price": round(curr_close, 2),
-                        "Classification": classification,
                         "Weekly Stage": stage,
                         "DC (20)": dc_col,
                         "52W High": w52_col,
                         "BB(50,2)": bb_col,
-                        "Signal": rec,
+                        "Satellite Signal": sat_signal,
+                        "Core Signal": core_signal,
                         "SL Satellite": round(sl_sat, 2),
                         "SL Sat Buffer %": round(sl_sat_buffer, 2),
                         "SL Core": round(sl_core, 2),
                         "SL Core Buffer %": round(sl_core_buffer, 2),
+                        "Classification": classification  # Moved to the end
                     }
                 )
             except Exception:
@@ -368,7 +387,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
         search_query = st.text_input("Ticker Search", "", key="filter_search").strip().upper()
     with f_col4:
         signal_options = ["BUY", "HOLD / TRIM", "SELL"]
-        selected_signal = st.selectbox("Signal Filter", options=["All"] + signal_options, key="filter_signal")
+        selected_signal = st.selectbox("Signal Filter (Satellite)", options=["All"] + signal_options, key="filter_signal")
     with f_col5:
         only_breakouts = st.checkbox("Active Breakouts Only", value=False, key="filter_breakouts")
 
@@ -381,7 +400,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     if search_query:
         filtered_df = filtered_df[filtered_df["Ticker"].str.contains(search_query)]
     if selected_signal != "All":
-        filtered_df = filtered_df[filtered_df["Signal"].str.contains(selected_signal)]
+        filtered_df = filtered_df[filtered_df["Satellite Signal"].str.contains(selected_signal)]
     if only_breakouts:
         filtered_df = filtered_df[
             (filtered_df["DC (20)"] != "-")
@@ -422,14 +441,20 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             if "SELL" in val: return "background-color: #dc143c; color: white; font-weight: bold"
             return "background-color: #1e90ff; color: white; font-weight: bold"
 
+        display_columns = [
+            "Chart", "Ticker", "Last Price", "Weekly Stage", "DC (20)", "52W High", 
+            "BB(50,2)", "Satellite Signal", "Core Signal", "SL Satellite", 
+            "SL Sat Buffer %", "SL Core", "SL Core Buffer %", "Classification"
+        ]
+
         st.dataframe(
-            filtered_df[["Chart", "Ticker", "Last Price", "Classification", "Weekly Stage", "DC (20)", "52W High", "BB(50,2)", "Signal", "SL Satellite", "SL Sat Buffer %", "SL Core", "SL Core Buffer %"]].style
+            filtered_df[display_columns].style
             .map(style_class, subset=["Classification"])
             .map(style_stage, subset=["Weekly Stage"])
             .map(style_dc, subset=["DC (20)"])
             .map(style_52w, subset=["52W High"])
             .map(style_bb, subset=["BB(50,2)"])
-            .map(style_signal, subset=["Signal"])
+            .map(style_signal, subset=["Satellite Signal", "Core Signal"])
             .format({
                 "Last Price": "{:.2f}", 
                 "SL Satellite": "{:.2f}", 
@@ -449,7 +474,7 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             }
         )
 
-        csv_bytes = filtered_df.drop(columns=["Chart"]).to_csv(index=False).encode("utf-8")
+        csv_bytes = filtered_df.drop(columns=["Chart", "Clean Ticker"]).to_csv(index=False).encode("utf-8")
         st.download_button(
             label=f"📥 Export '{selected_wl}' Results to CSV",
             data=csv_bytes,
