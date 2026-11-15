@@ -287,7 +287,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 sl_core = max(m_ema20, max_allowable_core_sl)
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
-                # TradingView absolute URL with suffix stripped (e.g. RELIANCE.NS -> RELIANCE)
+                # TradingView absolute URL with suffix stripped (e.g., RELIANCE.NS -> RELIANCE)
                 tv_symbol = t.split(".")[0]
                 tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={tv_symbol}"
 
@@ -329,27 +329,32 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
 
         if not df_out.empty:
             # --- ROBUST FILTERING CONTROLS ---
-            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+            st.markdown("### 🔍 Filter Results")
+            f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
             with f_col1:
                 class_options = ["CORE+SATELLITE", "CORE", "SATELLITE", "Neither"]
-                selected_classes = st.multiselect("Filter Classification", options=class_options, default=class_options)
+                selected_classes = st.multiselect("Classification", options=class_options, default=class_options)
             with f_col2:
                 stage_options = ["Stage 1: Basing", "Stage 2: Advancing", "Stage 3: Distribution", "Stage 4: Declining"]
-                selected_stages = st.multiselect("Filter Weekly Stage", options=stage_options, default=stage_options)
+                selected_stages = st.multiselect("Weekly Stage", options=stage_options, default=stage_options)
             with f_col3:
-                search_query = st.text_input("🔍 Search Ticker", "").strip().upper()
+                search_query = st.text_input("Ticker Search", "").strip().upper()
             with f_col4:
-                st.write("") # Spacer alignment
-                only_breakouts = st.checkbox("Active breakouts only", value=False)
+                signal_options = ["BUY", "HOLD / TRIM", "SELL"]
+                selected_signal = st.selectbox("Signal Filter", options=["All"] + signal_options)
+            with f_col5:
+                only_breakouts = st.checkbox("Active Breakouts Only", value=False)
 
-            # Apply filters safely
+            # Apply robust filtering logic
             filtered_df = df_out.copy()
             if selected_classes:
                 filtered_df = filtered_df[filtered_df["Classification"].isin(selected_classes)]
             if selected_stages:
-                filtered_df = filtered_df[filtered_df["Weekly Stage"].isin(selected_stages)]
+                filtered_df = filtered_df[filtered_df["Weekly Stage"].apply(lambda x: any(s in x for s in selected_stages))]
             if search_query:
                 filtered_df = filtered_df[filtered_df["Ticker"].str.contains(search_query)]
+            if selected_signal != "All":
+                filtered_df = filtered_df[filtered_df["Signal"].str.contains(selected_signal)]
             if only_breakouts:
                 filtered_df = filtered_df[
                     (filtered_df["DC (20)"] != "-")
@@ -414,8 +419,8 @@ if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
                     column_config={
                         "Chart": st.column_config.LinkColumn(
                             "TradingView Chart",
-                            help="Click to open stock chart directly on TradingView",
-                            display_text="📈 Open Chart",
+                            help="Click to open chart on TradingView",
+                            display_text=r"symbol=(.*)",
                             pinned=True
                         )
                     }
