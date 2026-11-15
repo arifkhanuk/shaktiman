@@ -77,17 +77,21 @@ if uploaded_file is not None:
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
 
-# Build selection list
+# Build selection list (including manual custom ticker input option)
 available_mls = list(st.session_state.watchlists.keys())
 if session_custom_watchlist and session_custom_watchlist[0] not in available_mls:
     available_mls.insert(0, session_custom_watchlist[0])
+available_mls.append("✏️ Enter Manual Tickers")
 if st.session_state.authenticated_admin:
     available_mls.append("+ Create New Watchlist")
 
 selected_wl = st.sidebar.selectbox("Select Active Watchlist", available_mls)
 
-# Handle Watchlist Content
-if selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
+# Handle Watchlist Content / Manual Input
+if selected_wl == "✏️ Enter Manual Tickers":
+    active_tickers_text = st.sidebar.text_area("Type Tickers (comma or newline separated)", "RELIANCE, TCS, INFY, ITC", height=120, help="Type or paste your stock symbols directly here.")
+    st.sidebar.caption("⚠️ Custom manual input for this session.")
+elif selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
     new_wl_name = st.sidebar.text_input("New Watchlist Name")
     new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", "TICKER1, TICKER2")
     if st.sidebar.button("Save New Watchlist"):
@@ -122,7 +126,7 @@ st.sidebar.divider()
 auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True)
 vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
-# Parse tickers
+# Parse tickers (handling both commas and newlines)
 parsed_tokens = [t.strip().upper() for t in active_tickers_text.replace("\n", ",").split(",") if t.strip()]
 tickers = []
 for t in parsed_tokens:
@@ -328,7 +332,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
                 clean_ticker = t.split(".")[0]
-                # Format mobile-friendly TradingView URL with exchange prefix (e.g. NSE%3ACARYSIL)
                 exchange_prefix = "LMS" if t.endswith(".L") else ("BSE" if t.endswith(".BO") else "NSE")
                 tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={exchange_prefix}%3A{clean_ticker}"
 
