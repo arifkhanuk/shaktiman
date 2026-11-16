@@ -287,7 +287,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
 
                 # Breakout Triggers
                 ref_high = float(df_d["High"].iloc[-1])
-                ref_close = float(df_d["Close"].iloc[-1])
                 is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max()) if len(df_d) >= 253 else False
 
                 # DC Weekly (20 periods on weekly high)
@@ -304,12 +303,13 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     m_high_prev_max = float(df_m["High"].iloc[-21:-1].max())
                     is_dc_m = m_high_curr > m_high_prev_max
 
-                # Bollinger Bands (50, 2) using sample standard deviation (ddof=1)
-                if len(df_d) >= 50:
-                    bb_basis = float(df_d["Close"].rolling(50).mean().iloc[-1])
-                    bb_std = float(df_d["Close"].rolling(50).std(ddof=1).iloc[-1])
+                # Bollinger Bands (50, 2) on Weekly Timeframe (matching chart)
+                if len(df_w) >= 50:
+                    w_close_series = df_w["Close"]
+                    bb_basis = float(w_close_series.rolling(50).mean().iloc[-1])
+                    bb_std = float(w_close_series.rolling(50).std(ddof=1).iloc[-1])
                     upper_band = bb_basis + (2.0 * bb_std)
-                    is_bb = ref_close > upper_band
+                    is_bb = w_close_val > upper_band
                 else:
                     is_bb = False
 
