@@ -10,7 +10,7 @@ st.set_page_config(page_title="Shaktimaan Hybrid Scanner", layout="wide")
 # ==========================================
 # 0. PERSISTENT WATCHLISTS & ADMIN SETUP
 # ==========================================
-ADMIN_PASSWORD = "AdminSecretPin"  # Password required to edit/add/delete watchlists
+ADMIN_PASSWORD = "AdminSecretPin"
 WATCHLIST_FILE = "watchlists.json"
 
 def load_persisted_watchlists():
@@ -39,9 +39,8 @@ if "authenticated_admin" not in st.session_state:
 if "watchlists" not in st.session_state:
     st.session_state.watchlists = load_persisted_watchlists()
 
+# Sidebar Setup
 st.sidebar.header("📁 Watchlist Manager")
-
-# Admin Control Panel in Sidebar
 if not st.session_state.authenticated_admin:
     admin_pass_input = st.sidebar.text_input("Admin Password (to edit/delete)", type="password")
     if st.sidebar.button("Unlock Admin Mode"):
@@ -51,7 +50,7 @@ if not st.session_state.authenticated_admin:
             st.rerun()
         else:
             st.sidebar.error("Incorrect password.")
-    st.sidebar.info("Public Mode: View existing watchlists & upload session files.")
+    st.sidebar.info("Public Mode: View existing watchlists.")
 else:
     st.sidebar.success("👑 Admin Mode Active")
     if st.sidebar.button("Lock Admin Mode"):
@@ -59,84 +58,36 @@ else:
         st.rerun()
 
 st.sidebar.divider()
+auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True)
+vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
 
-# Public file uploader (Session-only storage for public users, persistent if admin)
-uploaded_file = st.sidebar.file_uploader("Upload Temporary Watchlist (CSV / TXT)", type=["csv", "txt"])
-session_custom_watchlist = None
-if uploaded_file is not None:
-    try:
-        content = uploaded_file.read().decode("utf-8")
-        file_tokens = [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
-        if file_tokens:
-            wl_name = "Uploaded: " + uploaded_file.name.split(".")[0].replace("_", " ").title()
-            if st.session_state.authenticated_admin:
-                st.session_state.watchlists[wl_name] = ", ".join(file_tokens)
-                save_persisted_watchlists(st.session_state.watchlists)
-            session_custom_watchlist = (wl_name, ", ".join(file_tokens))
-            st.sidebar.success(f"Loaded '{wl_name}'!")
-    except Exception as e:
-        st.sidebar.error(f"Error reading file: {e}")
-
-# Build selection list (including manual custom ticker input option)
 available_mls = list(st.session_state.watchlists.keys())
-if session_custom_watchlist and session_custom_watchlist[0] not in available_mls:
-    available_mls.insert(0, session_custom_watchlist[0])
-available_mls.append("✏️ Enter Manual Tickers")
 if st.session_state.authenticated_admin:
     available_mls.append("+ Create New Watchlist")
 
-selected_wl = st.sidebar.selectbox("Select Active Watchlist", available_mls)
+selected_wl = st.sidebar.selectbox("Select Stored Watchlist", available_mls)
 
-# Handle Watchlist Content / Manual Input
-if selected_wl == "✏️ Enter Manual Tickers":
-    active_tickers_text = st.sidebar.text_area("Type Tickers (comma or newline separated)", "RELIANCE, TCS, INFY, ATHERENERG, PPLPHARMA", height=120, help="Type or paste your stock symbols directly here.")
-    st.sidebar.caption("⚠️ Custom manual input for this session.")
-elif selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
+if selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
     new_wl_name = st.sidebar.text_input("New Watchlist Name")
     new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", "TICKER1, TICKER2")
     if st.sidebar.button("Save New Watchlist"):
         if new_wl_name.strip():
             st.session_state.watchlists[new_wl_name.strip()] = new_wl_tickers
             save_persisted_watchlists(st.session_state.watchlists)
-            st.success(f"Watchlist '{new_wl_name}' saved persistently!")
+            st.success(f"Watchlist '{new_wl_name}' saved!")
             st.rerun()
-    active_tickers_text = "TICKER1, TICKER2"
-elif session_custom_watchlist and selected_wl == session_custom_watchlist[0]:
-    active_tickers_text = session_custom_watchlist[1]
-    st.sidebar.caption("⚠️ Temporary session watchlist.")
+    base_tickers_text = "TICKER1, TICKER2"
 else:
-    active_tickers_text = st.session_state.watchlists.get(selected_wl, "RELIANCE, TCS")
+    base_tickers_text = st.session_state.watchlists.get(selected_wl, "RELIANCE, TCS")
     if st.session_state.authenticated_admin:
-        updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", active_tickers_text, height=120)
-        if updated_text != active_tickers_text:
+        updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", base_tickers_text, height=100)
+        if updated_text != base_tickers_text:
             st.session_state.watchlists[selected_wl] = updated_text
             save_persisted_watchlists(st.session_state.watchlists)
-            active_tickers_text = updated_text
-
-        if st.sidebar.button(f"🗑️ Delete '{selected_wl}'"):
-            if len(st.session_state.watchlists) > 1:
-                del st.session_state.watchlists[selected_wl]
-                save_persisted_watchlists(st.session_state.watchlists)
-                st.sidebar.success("Deleted successfully!")
-                st.rerun()
-            else:
-                st.sidebar.warning("Must keep at least one permanent watchlist.")
-
-st.sidebar.divider()
-auto_append_ns = st.sidebar.checkbox("Auto-append .NS if no suffix", value=True)
-vol_surge_mult = st.sidebar.number_input("Volume Surge Multiplier", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
-
-# Parse tickers and preserve user duplicates if provided multiple times
-parsed_tokens = [t.strip().upper() for t in active_tickers_text.replace("\n", ",").split(",") if t.strip()]
-tickers = []
-for t in parsed_tokens:
-    if auto_append_ns and "." not in t:
-        tickers.append(f"{t}.NS")
-    else:
-        tickers.append(t)
+            base_tickers_text = updated_text
 
 # ==========================================
-# 1. TECHNICAL ENGINE
+# 1. TECHNICAL ENGINE CODE
 # ==========================================
 def compute_rsi(series: pd.Series, length: int = 14) -> pd.Series:
     delta = series.diff()
@@ -194,7 +145,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
         raw_data = yf.download(
-            tickers=list(set(chunk)),  # Download unique tickers once to optimize network fetch
+            tickers=list(set(chunk)),
             period="6y",
             interval="1d",
             group_by="ticker",
@@ -252,7 +203,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 exchange_prefix = "LMS" if t.endswith(".L") else ("BSE" if t.endswith(".BO") else "NSE")
                 tv_link = f"https://in.tradingview.com/chart/GCzoFDBK/?symbol={exchange_prefix}%3A{clean_ticker}"
 
-                # Compute Stop Losses
                 sl_sat = float(df_w["Close"].ewm(span=13, adjust=False).mean().iloc[-1]) if len(df_w) >= 13 else curr_close * 0.95
                 sl_sat_buffer = ((curr_close - sl_sat) / curr_close) * 100.0
 
@@ -262,7 +212,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 sl_core = max(m_ema20, max_allowable_core_sl)
                 sl_core_buffer = ((curr_close - sl_core) / curr_close) * 100.0
 
-                # Weekly Stage
                 if len(df_w) >= 6:
                     w_ema20_s = df_w["Close"].ewm(span=20, adjust=False).mean()
                     w_ema20 = float(w_ema20_s.iloc[-1])
@@ -276,7 +225,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     stage = "Insufficient Data"
 
-                # Candle open/close checks
                 w_close_val = float(df_w["Close"].iloc[-1]) if not df_w.empty else 0
                 w_open_val = float(df_w["Open"].iloc[-1]) if not df_w.empty else 0
                 w_red = w_close_val < w_open_val
@@ -285,25 +233,21 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 m_open_val = float(df_m["Open"].iloc[-1]) if not df_m.empty else 0
                 m_red = m_close_val < m_open_val
 
-                # Breakout Triggers
                 ref_high = float(df_d["High"].iloc[-1])
                 is_52w = ref_high >= float(df_d["High"].iloc[-253:-1].max()) if len(df_d) >= 253 else False
 
-                # DC Weekly (20 periods on weekly high)
                 is_dc_w = False
                 if len(df_w) >= 21:
                     w_high_curr = float(df_w["High"].iloc[-1])
                     w_high_prev_max = float(df_w["High"].iloc[-21:-1].max())
                     is_dc_w = w_high_curr > w_high_prev_max
 
-                # DC Monthly (20 periods on monthly high)
                 is_dc_m = False
                 if len(df_m) >= 21:
                     m_high_curr = float(df_m["High"].iloc[-1])
                     m_high_prev_max = float(df_m["High"].iloc[-21:-1].max())
                     is_dc_m = m_high_curr > m_high_prev_max
 
-                # Bollinger Bands (50, 2) on Weekly Timeframe (matching chart)
                 if len(df_w) >= 50:
                     w_close_series = df_w["Close"]
                     bb_basis = float(w_close_series.rolling(50).mean().iloc[-1])
@@ -318,7 +262,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 w52_col = "52W" if is_52w else "-"
                 bb_col = "BB(50,2)" if is_bb else "-"
 
-                # Satellite Signal (Weekly Candles df_w)
                 if len(df_w) >= 14:
                     rsi_w = compute_rsi(df_w["Close"], 14)
                     rsi_w_ma = rsi_w.rolling(14).mean()
@@ -338,7 +281,6 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     sat_signal = "Insufficient Data"
 
-                # Core Signal (Monthly Candles df_m)
                 if len(df_m) >= 14:
                     rsi_m = compute_rsi(df_m["Close"], 14)
                     rsi_m_ma = rsi_m.rolling(14).mean()
@@ -358,34 +300,19 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 else:
                     core_signal = "Insufficient Data"
 
-                # Apply "BUY / ADD" upgrades only if DC is active, signal is BUY, and Candle Close > Open
                 if is_dc_w and sat_signal == "BUY" and w_close_val > w_open_val:
                     sat_signal = "BUY / ADD"
 
                 if is_dc_m and core_signal == "BUY" and m_close_val > m_open_val:
                     core_signal = "BUY / ADD"
 
-                results.append(
-                    {
-                        "Ticker": t,
-                        "Chart": tv_link,
-                        "Clean Ticker": clean_ticker,
-                        "Last Price": round(curr_close, 2),
-                        "Weekly Stage": stage,
-                        "DC Weekly": dc_w_col,
-                        "52W High": w52_col,
-                        "BB(50,2)": bb_col,
-                        "Satellite Signal": sat_signal,
-                        "SL Satellite": round(sl_sat, 2),
-                        "SL Sat Buffer %": round(sl_sat_buffer, 2),
-                        "DC Monthly": dc_m_col,
-                        "Core Signal": core_signal,
-                        "SL Core": round(sl_core, 2),
-                        "SL Core Buffer %": round(sl_core_buffer, 2),
-                        "_w_red": w_red,
-                        "_m_red": m_red
-                    }
-                )
+                results.append({
+                    "Ticker": t, "Chart": tv_link, "Clean Ticker": clean_ticker, "Last Price": round(curr_close, 2),
+                    "Weekly Stage": stage, "DC Weekly": dc_w_col, "52W High": w52_col, "BB(50,2)": bb_col,
+                    "Satellite Signal": sat_signal, "SL Satellite": round(sl_sat, 2), "SL Sat Buffer %": round(sl_sat_buffer, 2),
+                    "DC Monthly": dc_m_col, "Core Signal": core_signal, "SL Core": round(sl_core, 2), "SL Core Buffer %": round(sl_core_buffer, 2),
+                    "_w_red": w_red, "_m_red": m_red
+                })
             except Exception:
                 results.append({
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
@@ -398,26 +325,46 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
     return pd.DataFrame(results)
 
 # ==========================================
-# 2. MAIN DASHBOARD VIEW
+# 2. MAIN DASHBOARD VIEW (With Prominent Manual Input)
 # ==========================================
 st.title("📊 Shaktimaan Hybrid — Multi-Stock Stop Loss & Signal Dashboard")
-st.subheader(f"Active Watchlist: `{selected_wl}`")
-st.write(f"Tokens to scan: `{', '.join(tickers)}`")
+
+# --- PROMINENT MAIN PAGE INPUT SECTION ---
+st.markdown("### ✏️ Scan Input")
+input_mode = st.radio("Choose Input Method", ["Use Selected Watchlist Stored Data", "Type / Paste Custom Tickers"], horizontal=True)
+
+if input_mode == "Type / Paste Custom Tickers":
+    user_manual_input = st.text_input("Enter Tickers (comma separated)", "RELIANCE, TCS, INFY, ATHERENERG, PPLPHARMA, HDFCLIFE")
+    active_tokens_text = user_manual_input
+else:
+    active_tokens_text = base_tickers_text
+    st.info(f"Active Stored Watchlist: **{selected_wl}** (`{base_tickers_text}`)")
+
+parsed_tokens = [t.strip().upper() for t in active_tokens_text.replace("\n", ",").split(",") if t.strip()]
+tickers = []
+for t in parsed_tokens:
+    if auto_append_ns and "." not in t:
+        tickers.append(f"{t}.NS")
+    else:
+        tickers.append(t)
+
+st.write(f"Tokens queued for scan: `{', '.join(tickers)}`")
 
 if "scan_results" not in st.session_state:
     st.session_state.scan_results = None
 
 if st.button("🚀 Run Classification & Stop Loss Scan", type="primary"):
     if not tickers:
-        st.warning("Selected watchlist is empty.")
+        st.warning("Selected watchlist or manual input is empty.")
     else:
-        with st.spinner(f"Scanning {len(tickers)} stocks for '{selected_wl}'..."):
+        with st.spinner(f"Scanning {len(tickers)} stocks..."):
             st.session_state.scan_results = fetch_and_analyze_batch(tuple(tickers), vol_surge_mult)
 
 # Render results and filters if scan data exists in session state
 if st.session_state.scan_results is not None and not st.session_state.scan_results.empty:
     df_out = st.session_state.scan_results
 
+    st.markdown("---")
     st.markdown("### 🔍 Filter Results")
     f_col1, f_col2, f_col3, f_col4 = st.columns(4)
     with f_col1:
@@ -431,7 +378,6 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
     with f_col4:
         only_breakouts = st.checkbox("Active Breakouts Only", value=False, key="filter_breakouts")
 
-    # Apply filtering logic safely
     filtered_df = df_out.copy()
     if selected_stages:
         filtered_df = filtered_df[filtered_df["Weekly Stage"].apply(lambda x: any(s in x for s in selected_stages))]
@@ -454,7 +400,6 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             styles = [''] * len(row)
             col_map = {col: i for i, col in enumerate(row.index)}
 
-            # Weekly Stage
             stage = row.get("Weekly Stage", "")
             if "Stage 2" in stage:
                 styles[col_map["Weekly Stage"]] = "background-color: #00aa50; color: white; font-weight: bold"
@@ -467,43 +412,30 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             elif "Insufficient Data" in stage:
                 styles[col_map["Weekly Stage"]] = "background-color: #555555; color: #ffaaaa; font-style: italic"
 
-            # DC Weekly (White text normally, amber ONLY if red candle Close < Open)
             dc_w = row.get("DC Weekly", "-")
             w_red = row.get("_w_red", False)
             if "DC" in str(dc_w):
-                if w_red:
-                    styles[col_map["DC Weekly"]] = "background-color: #196e2d; color: #ffbf00; font-weight: bold"
-                else:
-                    styles[col_map["DC Weekly"]] = "background-color: #196e2d; color: #ffffff; font-weight: bold"
+                styles[col_map["DC Weekly"]] = f"background-color: #196e2d; color: {'#ffbf00' if w_red else '#ffffff'}; font-weight: bold"
             else:
                 styles[col_map["DC Weekly"]] = "color: #666666"
 
-            # DC Monthly (White text normally, amber ONLY if red candle Close < Open)
             dc_m = row.get("DC Monthly", "-")
             m_red = row.get("_m_red", False)
             if "DC" in str(dc_m):
-                if m_red:
-                    styles[col_map["DC Monthly"]] = "background-color: #196e2d; color: #ffbf00; font-weight: bold"
-                else:
-                    styles[col_map["DC Monthly"]] = "background-color: #196e2d; color: #ffffff; font-weight: bold"
+                styles[col_map["DC Monthly"]] = f"background-color: #196e2d; color: {'#ffbf00' if m_red else '#ffffff'}; font-weight: bold"
             else:
                 styles[col_map["DC Monthly"]] = "color: #666666"
 
-            # 52W High
-            w52 = row.get("52W High", "-")
-            if w52 == "52W":
+            if row.get("52W High", "-") == "52W":
                 styles[col_map["52W High"]] = "background-color: #196e2d; color: #64b4ff; font-weight: bold"
             else:
                 styles[col_map["52W High"]] = "color: #666666"
 
-            # BB(50,2)
-            bb = row.get("BB(50,2)", "-")
-            if bb == "BB(50,2)":
+            if row.get("BB(50,2)", "-") == "BB(50,2)":
                 styles[col_map["BB(50,2)"]] = "background-color: #196e2d; color: #d782ff; font-weight: bold"
             else:
                 styles[col_map["BB(50,2)"]] = "color: #666666"
 
-            # Satellite Signal & Core Signal
             for sig_col in ["Satellite Signal", "Core Signal"]:
                 if sig_col in col_map:
                     sig = row.get(sig_col, "")
@@ -554,9 +486,9 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
 
         csv_bytes = filtered_df.drop(columns=["Chart", "Clean Ticker", "_w_red", "_m_red"], errors="ignore").to_csv(index=False).encode("utf-8")
         st.download_button(
-            label=f"📥 Export '{selected_wl}' Results to CSV",
+            label="📥 Export Filtered Results to CSV",
             data=csv_bytes,
-            file_name=f"{selected_wl.lower().replace(' ', '_')}_scan.csv",
+            file_name="shaktimaan_scan_results.csv",
             mime="text/csv",
         )
 elif st.session_state.scan_results is not None and st.session_state.scan_results.empty:
