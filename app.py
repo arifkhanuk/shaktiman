@@ -207,9 +207,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
             for t in chunk:
                 results.append({
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                    "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
-                    "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                    "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
+                    "Satellite Signal": "Insufficient Data", "SL Satellite": 0.0, "SL Sat Buffer %": 0.0,
+                    "DC Monthly": "-", "Core Signal": "Insufficient Data", "SL Core": 0.0, "SL Core Buffer %": 0.0,
                     "_w_red": False, "_m_red": False
                 })
             continue
@@ -224,9 +224,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     if t not in raw_data.columns.get_level_values(0):
                         results.append({
                             "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                            "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
-                            "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                            "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                            "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
+                            "Satellite Signal": "Insufficient Data", "SL Satellite": 0.0, "SL Sat Buffer %": 0.0,
+                            "DC Monthly": "-", "Core Signal": "Insufficient Data", "SL Core": 0.0, "SL Core Buffer %": 0.0,
                             "_w_red": False, "_m_red": False
                         })
                         continue
@@ -236,9 +236,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                 if len(df_d) < 50:
                     results.append({
                         "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                        "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
-                        "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                        "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                        "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
+                        "Satellite Signal": "Insufficient Data", "SL Satellite": 0.0, "SL Sat Buffer %": 0.0,
+                        "DC Monthly": "-", "Core Signal": "Insufficient Data", "SL Core": 0.0, "SL Core Buffer %": 0.0,
                         "_w_red": False, "_m_red": False
                     })
                     continue
@@ -371,13 +371,13 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                         "Last Price": round(curr_close, 2),
                         "Weekly Stage": stage,
                         "DC Weekly": dc_w_col,
-                        "DC Monthly": dc_m_col,
                         "52W High": w52_col,
                         "BB(50,2)": bb_col,
                         "Satellite Signal": sat_signal,
-                        "Core Signal": core_signal,
                         "SL Satellite": round(sl_sat, 2),
                         "SL Sat Buffer %": round(sl_sat_buffer, 2),
+                        "DC Monthly": dc_m_col,
+                        "Core Signal": core_signal,
                         "SL Core": round(sl_core, 2),
                         "SL Core Buffer %": round(sl_core_buffer, 2),
                         "_w_red": w_red,
@@ -387,9 +387,9 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
             except Exception:
                 results.append({
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                    "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "DC Monthly": "-", "52W High": "-", "BB(50,2)": "-",
-                    "Satellite Signal": "Insufficient Data", "Core Signal": "Insufficient Data",
-                    "SL Satellite": 0.0, "SL Sat Buffer %": 0.0, "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                    "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
+                    "Satellite Signal": "Insufficient Data", "SL Satellite": 0.0, "SL Sat Buffer %": 0.0,
+                    "DC Monthly": "-", "Core Signal": "Insufficient Data", "SL Core": 0.0, "SL Core Buffer %": 0.0,
                     "_w_red": False, "_m_red": False
                 })
 
@@ -517,9 +517,9 @@ if st.session_state.scan_results is not None and not st.session_state.scan_resul
             return styles
 
         display_columns = [
-            "Chart", "Ticker", "Last Price", "Weekly Stage", "DC Weekly", "DC Monthly", "52W High", 
-            "BB(50,2)", "Satellite Signal", "Core Signal", "SL Satellite", 
-            "SL Sat Buffer %", "SL Core", "SL Core Buffer %"
+            "Chart", "Ticker", "Last Price", "Weekly Stage", 
+            "DC Weekly", "52W High", "BB(50,2)", "Satellite Signal", "SL Satellite", "SL Sat Buffer %", 
+            "DC Monthly", "Core Signal", "SL Core", "SL Core Buffer %"
         ]
 
         styled_df = (
