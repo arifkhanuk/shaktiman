@@ -145,7 +145,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
     for i in range(0, len(ticker_list), chunk_size):
         chunk = ticker_list[i : i + chunk_size]
         raw_data = yf.download(
-            tickers=list(set(chunk)),
+            tickers=list(chunk),
             period="6y",
             interval="1d",
             group_by="ticker",
@@ -167,21 +167,25 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
 
         for t in chunk:
             try:
-                if len(set(chunk)) == 1:
+                # Robust extraction supporting both single-stock (flat) and multi-stock (MultiIndex) outputs
+                if len(list(set(chunk))) == 1 and len(chunk) == 1:
                     df_d = raw_data.copy()
                     if isinstance(df_d.columns, pd.MultiIndex):
-                        df_d.columns = df_d.columns.get_level_values(0)
+                        df_d.columns = df_d.columns.droplevel(0)
                 else:
-                    if t not in raw_data.columns.get_level_values(0):
-                        results.append({
-                            "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
-                            "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
-                            "Satellite Signal": "Insufficient Data", "SL Satellite": 0.0, "SL Sat Buffer %": 0.0,
-                            "DC Monthly": "-", "Core Signal": "Insufficient Data", "SL Core": 0.0, "SL Core Buffer %": 0.0,
-                            "_w_red": False, "_m_red": False
-                        })
-                        continue
-                    df_d = raw_data[t].dropna(how="all").copy()
+                    if isinstance(raw_data.columns, pd.MultiIndex):
+                        if t not in raw_data.columns.get_level_values(0):
+                            results.append({
+                                "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
+                                "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
+                                "Satellite Signal": "Insufficient Data", "SL Satellite": 0.0, "SL Sat Buffer %": 0.0,
+                                "DC Monthly": "-", "Core Signal": "Insufficient Data", "SL Core": 0.0, "SL Core Buffer %": 0.0,
+                                "_w_red": False, "_m_red": False
+                            })
+                            continue
+                        df_d = raw_data[t].dropna(how="all").copy()
+                    else:
+                        df_d = raw_data.copy()
 
                 df_d = df_d.dropna(subset=["Close", "High", "Low", "Volume"])
                 if len(df_d) < 50:
@@ -313,7 +317,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
                     "DC Monthly": dc_m_col, "Core Signal": core_signal, "SL Core": round(sl_core, 2), "SL Core Buffer %": round(sl_core_buffer, 2),
                     "_w_red": w_red, "_m_red": m_red
                 })
-            except Exception:
+            except Exception as e:
                 results.append({
                     "Ticker": t, "Chart": "", "Clean Ticker": t.split(".")[0], "Last Price": 0.0,
                     "Weekly Stage": "Insufficient Data", "DC Weekly": "-", "52W High": "-", "BB(50,2)": "-",
@@ -325,7 +329,7 @@ def fetch_and_analyze_batch(ticker_tuple: tuple, vol_mult: float) -> pd.DataFram
     return pd.DataFrame(results)
 
 # ==========================================
-# 2. MAIN DASHBOARD VIEW (With Prominent Manual Input)
+# 2. MAIN DASHBOARD VIEW
 # ==========================================
 st.title("📊 Shaktimaan Hybrid — Multi-Stock Stop Loss & Signal Dashboard")
 
