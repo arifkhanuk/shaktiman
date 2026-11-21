@@ -33,6 +33,10 @@ def save_persisted_watchlists(wl_dict):
     except Exception:
         pass
 
+def parse_uploaded_tokens(uploaded_file):
+    content = uploaded_file.getvalue().decode("utf-8")
+    return [t.strip().upper() for t in content.replace("\n", ",").split(",") if t.strip()]
+
 if "authenticated_admin" not in st.session_state:
     st.session_state.authenticated_admin = False
 
@@ -68,18 +72,64 @@ if st.session_state.authenticated_admin:
 selected_wl = st.sidebar.selectbox("Select Stored Watchlist", available_mls)
 
 if selected_wl == "+ Create New Watchlist" and st.session_state.authenticated_admin:
-    new_wl_name = st.sidebar.text_input("New Watchlist Name")
-    new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", "TICKER1, TICKER2")
+    new_wl_name_input = st.sidebar.text_input("New Watchlist Name")
+    new_wl_file = st.sidebar.file_uploader("Upload Tickers (CSV / TXT)", type=["csv", "txt"], key="admin_new_wl_file")
+
+    default_new_tickers = "TICKER1, TICKER2"
+    suggested_name = new_wl_name_input.strip()
+    if new_wl_file is not None:
+        try:
+            file_tokens = parse_uploaded_tokens(new_wl_file)
+            if file_tokens:
+                default_new_tickers = ", ".join(file_tokens)
+                if not suggested_name:
+                    suggested_name = new_wl_file.name.rsplit(".", 1)[0].replace("_", " ").title()
+        except Exception as e:
+            st.sidebar.error(f"Error reading file: {e}")
+
+    new_wl_tickers = st.sidebar.text_area("Tickers (comma separated)", default_new_tickers, height=100)
     if st.sidebar.button("Save New Watchlist"):
-        if new_wl_name.strip():
-            st.session_state.watchlists[new_wl_name.strip()] = new_wl_tickers
+        final_wl_name = new_wl_name_input.strip() or suggested_name
+        if final_wl_name:
+            st.session_state.watchlists[final_wl_name] = new_wl_tickers
             save_persisted_watchlists(st.session_state.watchlists)
-            st.success(f"Watchlist '{new_wl_name}' saved!")
+            st.success(f"Watchlist '{final_wl_name}' saved!")
             st.rerun()
-    base_tickers_text = "TICKER1, TICKER2"
+        else:
+            st.sidebar.warning("Please enter a watchlist name.")
+    base_tickers_text = new_wl_tickers
 else:
     base_tickers_text = st.session_state.watchlists.get(selected_wl, "RELIANCE, TCS")
     if st.session_state.authenticated_admin:
+        edit_upload_file = st.sidebar.file_uploader(
+            f"Import CSV/TXT into '{selected_wl}'",
+            type=["csv", "txt"],
+            key=f"admin_edit_wl_file_{selected_wl}"
+        )
+        upload_action = st.sidebar.radio(
+            "File Import Mode",
+            ["Replace Watchlist", "Append to Watchlist"],
+            horizontal=True,
+            key=f"admin_edit_wl_mode_{selected_wl}"
+        )
+        if edit_upload_file is not None and st.sidebar.button(f"Apply File to '{selected_wl}'", key=f"apply_file_{selected_wl}"):
+            try:
+                file_tokens = parse_uploaded_tokens(edit_upload_file)
+                if file_tokens:
+                    if upload_action == "Append to Watchlist":
+                        existing_tokens = [t.strip().upper() for t in base_tickers_text.replace("\n", ",").split(",") if t.strip()]
+                        merged_text = ", ".join(existing_tokens + file_tokens)
+                    else:
+                        merged_text = ", ".join(file_tokens)
+                    st.session_state.watchlists[selected_wl] = merged_text
+                    save_persisted_watchlists(st.session_state.watchlists)
+                    st.sidebar.success(f"Updated '{selected_wl}' from {edit_upload_file.name}!")
+                    st.rerun()
+                else:
+                    st.sidebar.warning("Uploaded file had no valid tickers.")
+            except Exception as e:
+                st.sidebar.error(f"Error reading file: {e}")
+
         updated_text = st.sidebar.text_area(f"Edit Tickers ({selected_wl})", base_tickers_text, height=100)
         if updated_text != base_tickers_text:
             st.session_state.watchlists[selected_wl] = updated_text
